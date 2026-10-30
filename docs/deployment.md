@@ -172,7 +172,7 @@ MAX_DOC_CHARS=500000          # ~500 KB of code per room
 MAX_MESSAGE_BYTES=2097152     # 2 MB per WebSocket message (a large paste)
 MAX_MESSAGES_PER_SECOND=60    # per connection, bursts up to 4x
 MAX_CONNECTIONS_PER_IP=20
-MAX_NEW_ROOMS_PER_HOUR=60     # per IP
+MAX_NEW_ROOMS_PER_HOUR=200    # per IP; opening "/" creates a room, so keep it generous
 MAX_ACTIVE_ROOMS=2000
 ROOM_TTL_DAYS=90              # delete rooms nobody edited for 90 days
 ```

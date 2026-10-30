@@ -170,7 +170,27 @@ let slow = false
 let retryAt = 0
 let retryDelay = 0
 let retryTimer = 0
+let retryReason = ''
 let roomGone = false
+
+/** What the status bar says, and how long to wait first, for each reason the server gives. */
+const LIMIT_REASONS: Record<string, { label: string; explain: string; firstDelay: number }> = {
+  'Too many new rooms': {
+    label: 'Too many new rooms from your network',
+    explain: "You've opened a lot of new rooms recently. Rooms you already have still work.",
+    firstDelay: 60_000,
+  },
+  'Too many connections': {
+    label: 'Too many connections from your network',
+    explain: 'Your network has many open connections to this server.',
+    firstDelay: 15_000,
+  },
+  'Room is full': {
+    label: 'This room is full',
+    explain: 'This room has as many people as it allows.',
+    firstDelay: 15_000,
+  },
+}
 
 // One place decides the status text, so later events can't overwrite a more useful message.
 function renderStatus(): void {
@@ -179,7 +199,8 @@ function renderStatus(): void {
     status.textContent = 'Not connected'
   } else if (retryAt > 0) {
     const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))
-    status.textContent = `Server busy — retrying in ${seconds}s`
+    const label = LIMIT_REASONS[retryReason]?.label ?? 'Server busy'
+    status.textContent = `${label} — retrying in ${seconds}s`
   } else if (connectionState === 'connected') {
     status.textContent = 'Connected'
   } else if (connectionState === 'disconnected') {
@@ -218,10 +239,15 @@ provider.once('sync', () => {
  * The server refused the connection because of a rate limit. y-websocket gives up on 44xx
  * codes, so wait (longer each time, up to two minutes) and then reconnect ourselves.
  */
-function retryLater(): void {
-  retryDelay = Math.min(retryDelay ? retryDelay * 2 : 15_000, 120_000)
+function retryLater(reason: string): void {
+  const known = LIMIT_REASONS[reason]
+  const firstRetry = retryDelay === 0
+  retryReason = reason
+  retryDelay = Math.min(retryDelay ? retryDelay * 2 : (known?.firstDelay ?? 15_000), 300_000)
   retryAt = Date.now() + retryDelay
-  announce(`The server is busy. Retrying in ${Math.round(retryDelay / 1000)} seconds.`)
+  const seconds = Math.round(retryDelay / 1000)
+  if (firstRetry && known) notify(`${known.explain} Trying again in ${seconds} seconds.`)
+  else announce(`${known?.label ?? 'The server is busy'}. Retrying in ${seconds} seconds.`)
   window.clearInterval(retryTimer)
   retryTimer = window.setInterval(() => {
     if (Date.now() < retryAt) {
@@ -239,7 +265,7 @@ function retryLater(): void {
 
 provider.on('connection-close', (event: CloseEvent | null) => {
   if (event?.code === CLOSE_NOT_FOUND) showGone(event.reason === 'Room deleted')
-  else if (event?.code === CLOSE_RATE_LIMITED) retryLater()
+  else if (event?.code === CLOSE_RATE_LIMITED) retryLater(event.reason)
 })
 
 function showGone(deleted: boolean): void {
