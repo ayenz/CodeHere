@@ -24,8 +24,9 @@ export const CLOSE_RATE_LIMITED = 4429
 const CLOSE_TRY_AGAIN_LATER = 1013
 
 const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]{4,32}$/
-// Paths the server or client use for something other than rooms.
-const RESERVED_IDS = new Set(['admin', 'api', 'assets', 'healthz', 'v', 'ws'])
+// Paths the server or client use for something other than rooms. The admin UI lives on
+// its own host (ADMIN_HOST), so "admin" stays available as a room name.
+const RESERVED_IDS = new Set(['api', 'assets', 'healthz', 'v', 'ws'])
 
 export function isRoomId(id: string): boolean {
   return ROOM_ID_PATTERN.test(id) && !RESERVED_IDS.has(id.toLowerCase())

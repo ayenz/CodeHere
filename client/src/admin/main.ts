@@ -143,7 +143,11 @@ function showDashboard(): void {
   signOutButton.hidden = false
   document.title = 'Admin · CodeHere'
   $('dashboard-heading').focus()
-  void refreshAll()
+  // Learn the editor's origin (for room links) before the first render; failures fall back to relative links.
+  void api
+    .checkSession()
+    .catch(() => false)
+    .then(() => refreshAll())
 }
 
 function isDashboardVisible(): boolean {
@@ -270,7 +274,7 @@ function actionButton(action: string, id: string, label: string, extraClass = ''
 function renderRow(room: RoomSummary, now: number): HTMLTableRowElement {
   const link = h(
     'a',
-    { href: `/${encodeURIComponent(room.id)}`, target: '_blank', rel: 'noopener' },
+    { href: api.roomUrl(room.id), target: '_blank', rel: 'noopener' },
     room.id,
     h('span', { class: 'sr-only' }, ' (opens in new tab)'),
   )
@@ -422,7 +426,7 @@ async function viewRoom(id: string, trigger: HTMLButtonElement): Promise<void> {
     const pre = $('view-text')
     pre.textContent = room.text || '(empty)'
     pre.scrollTop = 0
-    $<HTMLAnchorElement>('view-open').href = `/${encodeURIComponent(room.id)}`
+    $<HTMLAnchorElement>('view-open').href = api.roomUrl(room.id)
     openDialog(viewDialog, trigger)
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {

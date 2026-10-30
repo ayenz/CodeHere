@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import http from 'node:http'
 import { mkdtempSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -26,6 +27,8 @@ export function testConfig(overrides: Partial<Omit<Config, 'limits'>> & { limits
     roomTtlDays: 0,
     staticDir: '/nonexistent',
     adminPassword: '',
+    adminHost: '',
+    publicUrl: '',
     ...overrides,
     limits: { ...base.limits, ...overrides.limits },
   }
@@ -50,6 +53,30 @@ export async function start(config: Config): Promise<Running> {
     ws: `ws://127.0.0.1:${port}/ws`,
     stop: () => app.close(),
   }
+}
+
+export interface HostResponse {
+  status: number
+  headers: http.IncomingHttpHeaders
+  body: string
+}
+
+/** HTTP request with an explicit Host header, which fetch does not allow overriding. */
+export function requestWithHost(
+  url: string,
+  host: string,
+  options: { method?: string; headers?: Record<string, string>; body?: string } = {},
+): Promise<HostResponse> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(url, { method: options.method ?? 'GET', headers: { ...options.headers, host } }, (res) => {
+      let body = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => (body += chunk))
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }))
+    })
+    req.on('error', reject)
+    req.end(options.body)
+  })
 }
 
 export function roomId(): string {

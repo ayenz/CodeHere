@@ -1,15 +1,30 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { ADMIN_URL } from './playwright.config'
 
 async function signIn(page: Page): Promise<void> {
-  await page.goto('/admin')
+  await page.goto(ADMIN_URL)
   await page.locator('input[type=password]').fill('e2e-admin')
   await page.locator('input[type=password]').press('Enter')
   await expect(page.locator('table')).toBeVisible()
 }
 
-test('wrong passwords are rejected', async ({ page }) => {
+test('the admin page only exists on its own host', async ({ page, request }) => {
+  // On the editor host, /admin is just another room.
   await page.goto('/admin')
+  await expect(page.locator('#editor')).not.toHaveAttribute('data-loading')
+  await expect(page.locator('#room-id')).toHaveText('admin')
+  expect((await request.get('/api/admin/session')).status()).toBe(404)
+  expect((await request.get('/admin.html')).headers()['content-type']).toContain('text/html')
+  expect(await (await request.get('/admin.html')).text()).not.toContain('Admin · CodeHere')
+
+  // On the admin host, every path is the admin page.
+  await page.goto(`${ADMIN_URL}/anything`)
+  await expect(page.locator('input[type=password]')).toBeVisible()
+})
+
+test('wrong passwords are rejected', async ({ page }) => {
+  await page.goto(ADMIN_URL)
   await page.locator('input[type=password]').fill('nope')
   await page.locator('input[type=password]').press('Enter')
   await expect(page.locator('#login-error')).toHaveText('Wrong password')
@@ -30,6 +45,9 @@ test('admins can lock and delete rooms', async ({ page, browser }) => {
   await page.locator('input[type=search]').fill(roomId)
   const row = page.locator('tbody tr', { hasText: roomId })
   await expect(row).toBeVisible()
+
+  // Room links leave the admin subdomain for the editor.
+  await expect(row.getByRole('link')).toHaveAttribute('href', new RegExp(`^http://localhost:\\d+/${roomId}$`))
 
   await row.getByRole('button', { name: /lock/i }).click()
   await expect(editor.locator('#banner')).toContainText('locked')

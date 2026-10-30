@@ -15,7 +15,23 @@ export interface AdminContext {
   rooms: RoomManager
   store: RoomStore
   startedAt: number
+  /** False when ADMIN_PASSWORD or ADMIN_HOST is missing. */
+  enabled: boolean
   clientIp(req: IncomingMessage): string
+}
+
+/**
+ * Where the editor lives, for links from the admin page: PUBLIC_URL, or the admin host
+ * without its first label (admin.example.com → example.com), keeping scheme and port.
+ */
+function editorOrigin(config: Config, req: IncomingMessage, secure: boolean): string {
+  if (config.publicUrl) return config.publicUrl
+  const host = req.headers.host ?? ''
+  const [name, port] = [host.replace(/:\d+$/, ''), /:\d+$/.exec(host)?.[0] ?? '']
+  const labels = name.split('.')
+  // Only strip a subdomain from real hostnames (not IPs or single-label hosts like "localhost").
+  const parent = labels.length > 1 && !/^[\d.]+$/.test(name) && !name.startsWith('[') ? labels.slice(1).join('.') : name
+  return `${secure ? 'https' : 'http'}://${parent}${port}`
 }
 
 function json(res: ServerResponse, status: number, body?: unknown): void {
@@ -84,7 +100,7 @@ export function createAdminHandler(ctx: AdminContext) {
 
   return async function handle(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<boolean> {
     if (!pathname.startsWith('/api/admin/')) return false
-    if (!ctx.config.adminPassword) {
+    if (!ctx.enabled) {
       json(res, 404, { error: 'Admin is disabled' })
       return true
     }
@@ -130,7 +146,7 @@ export function createAdminHandler(ctx: AdminContext) {
     }
 
     if (route === '/session' && method === 'GET') {
-      json(res, 200, { authenticated: true })
+      json(res, 200, { authenticated: true, editorOrigin: editorOrigin(ctx.config, req, isSecure(req)) })
       return true
     }
 

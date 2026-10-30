@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs'
-import { createServer, type IncomingMessage, type Server } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sirv from 'sirv'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { createAdminHandler } from './admin.js'
-import type { Config } from './config.js'
+import { hostname, type Config } from './config.js'
 import { openRoomStore, type RoomStore } from './db.js'
 import { isRoomId, RoomManager, type Access } from './rooms.js'
 
@@ -18,6 +18,11 @@ export interface App {
   store: RoomStore
   /** Saves every open room and closes connections and the database. */
   close(): Promise<void>
+}
+
+/** Built files that are served as-is on both hosts; every other path is a page. */
+function isStaticAsset(pathname: string): boolean {
+  return pathname.startsWith('/assets/') || pathname === '/favicon.svg'
 }
 
 /** Parses /ws/<roomId> (edit) and /ws/v/<viewId> (read-only). */
@@ -50,7 +55,16 @@ export async function createApp(config: Config): Promise<App> {
     return req.socket.remoteAddress ?? 'unknown'
   }
 
-  const handleAdmin = createAdminHandler({ config, rooms, store, startedAt, clientIp })
+  /** True for requests addressed to ADMIN_HOST (e.g. admin.example.com). */
+  function isAdminHost(req: IncomingMessage): boolean {
+    if (!config.adminHost) return false
+    const forwarded = config.trustProxy ? req.headers['x-forwarded-host'] : undefined
+    const host = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0] ?? req.headers.host ?? ''
+    return hostname(host) === config.adminHost
+  }
+
+  const adminEnabled = Boolean(config.adminPassword && config.adminHost)
+  const handleAdmin = createAdminHandler({ config, rooms, store, startedAt, clientIp, enabled: adminEnabled })
 
   /** DELETE /api/rooms/:id with the creator's X-Owner-Token. */
   async function deleteAsOwner(req: IncomingMessage, id: string): Promise<number> {
@@ -89,6 +103,15 @@ export async function createApp(config: Config): Promise<App> {
       res.writeHead(200, { 'content-type': 'text/plain' }).end('ok')
       return
     }
+    if (isAdminHost(req)) {
+      serveAdminHost(req, res, pathname)
+      return
+    }
+    if (pathname.startsWith('/api/admin/')) {
+      // The admin API only exists on ADMIN_HOST.
+      res.writeHead(404, { 'content-type': 'application/json' }).end('{"error":"Not found"}')
+      return
+    }
     if (pathname === '/api/config') {
       res
         .writeHead(200, { 'content-type': 'application/json' })
@@ -106,6 +129,23 @@ export async function createApp(config: Config): Promise<App> {
       return
     }
     if (pathname.startsWith('/api/')) {
+      res.writeHead(404, { 'content-type': 'application/json' }).end('{"error":"Not found"}')
+      return
+    }
+    // Every other path is a room, so it gets the editor page (the admin page only exists on ADMIN_HOST).
+    if (!isStaticAsset(pathname)) req.url = '/'
+    if (serveStatic) {
+      serveStatic(req, res, () => {
+        res.writeHead(404).end('Not found')
+      })
+      return
+    }
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('Client not built. Run `npm run build`.')
+  })
+
+  /** ADMIN_HOST serves only the admin page, its assets and the admin API. */
+  function serveAdminHost(req: IncomingMessage, res: ServerResponse, pathname: string): void {
+    if (pathname.startsWith('/api/')) {
       handleAdmin(req, res, pathname)
         .then((handled) => {
           if (!handled) res.writeHead(404, { 'content-type': 'application/json' }).end('{"error":"Not found"}')
@@ -117,21 +157,22 @@ export async function createApp(config: Config): Promise<App> {
         })
       return
     }
-    if (serveStatic) {
-      serveStatic(req, res, () => {
-        res.writeHead(404).end('Not found')
-      })
+    if (!adminEnabled || !serveStatic) {
+      res.writeHead(404, { 'content-type': 'text/plain' }).end('Not found')
       return
     }
-    res.writeHead(404, { 'content-type': 'text/plain' }).end('Client not built. Run `npm run build`.')
-  })
+    if (!isStaticAsset(pathname)) req.url = '/admin.html'
+    serveStatic(req, res, () => {
+      res.writeHead(404).end('Not found')
+    })
+  }
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: config.limits.maxMessageBytes })
   const alive = new WeakSet<WebSocket>()
 
   server.on('upgrade', (req, socket, head) => {
     const { pathname, searchParams } = new URL(req.url ?? '/', 'http://localhost')
-    const access = parseAccess(pathname, searchParams)
+    const access = isAdminHost(req) ? null : parseAccess(pathname, searchParams)
     if (!access) {
       socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
       return

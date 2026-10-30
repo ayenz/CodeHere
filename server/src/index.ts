@@ -6,7 +6,9 @@ const app = await createApp(config)
 
 app.server.listen(config.port, config.host, () => {
   console.log(`[server] listening on http://${config.host}:${config.port} (db: ${config.dbDriver})`)
-  console.log(`[server] admin ${config.adminPassword ? 'enabled at /admin' : 'disabled (set ADMIN_PASSWORD)'}`)
+  if (config.adminPassword && config.adminHost) console.log(`[server] admin enabled on host ${config.adminHost}`)
+  else if (config.adminPassword) console.warn('[server] admin disabled: ADMIN_PASSWORD is set but ADMIN_HOST is not')
+  else console.log('[server] admin disabled (set ADMIN_PASSWORD and ADMIN_HOST)')
 })
 
 let shuttingDown = false

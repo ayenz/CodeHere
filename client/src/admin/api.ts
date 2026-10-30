@@ -106,10 +106,20 @@ export async function logout(): Promise<void> {
   await request('POST', '/logout')
 }
 
+// The admin page runs on its own host (ADMIN_HOST); room links must point at the editor's.
+let editorOrigin = ''
+
+/** Absolute link to a room in the editor. */
+export function roomUrl(id: string): string {
+  return `${editorOrigin}/${encodeURIComponent(id)}`
+}
+
 /** Resolves true when signed in, false on 401; throws on 404 (admin disabled) and other errors. */
 export async function checkSession(): Promise<boolean> {
   try {
     const data = await getJson('/session')
+    const origin = str(data.editorOrigin)
+    if (origin && /^https?:\/\//.test(origin)) editorOrigin = origin.replace(/\/+$/, '')
     return data.authenticated === true
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) return false

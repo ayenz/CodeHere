@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { defineConfig } from '@playwright/test'
 
 const PORT = 3199
+// Chromium resolves *.localhost to the loopback address, so no DNS setup is needed.
+export const ADMIN_URL = `http://admin.localhost:${PORT}`
 const dataDir = mkdtempSync(join(tmpdir(), 'codehere-e2e-'))
 
 export default defineConfig({
@@ -30,6 +32,7 @@ export default defineConfig({
       HOST: '127.0.0.1',
       SQLITE_PATH: join(dataDir, 'e2e.db'),
       ADMIN_PASSWORD: 'e2e-admin',
+      ADMIN_HOST: 'admin.localhost',
       MAX_DOC_CHARS: '5000',
       PERSIST_DEBOUNCE_MS: '100',
     },

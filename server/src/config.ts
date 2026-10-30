@@ -9,8 +9,12 @@ export interface Config {
   roomTtlDays: number
   persistDebounceMs: number
   staticDir: string | null
-  /** Admin UI and API are disabled when empty. */
+  /** Admin UI and API are disabled unless both the password and host are set. */
   adminPassword: string
+  /** Hostname that serves the admin UI and API, e.g. admin.example.com (lowercase, no port). */
+  adminHost: string
+  /** Public URL of the editor, used for links from the admin page. Derived when empty. */
+  publicUrl: string
   /** Use X-Forwarded-For for client IPs (only behind a trusted reverse proxy). */
   trustProxy: boolean
   limits: Limits
@@ -44,6 +48,13 @@ function bool(name: string): boolean {
   return ['1', 'true', 'yes'].includes((process.env[name] ?? '').toLowerCase())
 }
 
+/** Lowercase hostname without port or scheme, so "https://Admin.Example.com:8443/" becomes "admin.example.com". */
+export function hostname(value: string): string {
+  const host = value.trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split('/')[0]
+  // Bracketed IPv6 literals keep their colons.
+  return host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.split(':')[0]
+}
+
 function driver(): DbDriver {
   const raw = (process.env.DB_DRIVER ?? 'sqlite').toLowerCase()
   if (raw === 'postgresql' || raw === 'pg') return 'postgres'
@@ -67,6 +78,8 @@ export function loadConfig(): Config {
     persistDebounceMs: int('PERSIST_DEBOUNCE_MS', 2000),
     staticDir: process.env.STATIC_DIR ?? null,
     adminPassword: process.env.ADMIN_PASSWORD ?? '',
+    adminHost: hostname(process.env.ADMIN_HOST ?? ''),
+    publicUrl: (process.env.PUBLIC_URL ?? '').replace(/\/+$/, ''),
     trustProxy: bool('TRUST_PROXY'),
     limits: {
       maxDocChars: int('MAX_DOC_CHARS', 0),

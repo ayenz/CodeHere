@@ -12,6 +12,8 @@ services:
       SQLITE_PATH: /data/codehere.db
       DATABASE_URL: ${DATABASE_URL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_HOST: ${ADMIN_HOST:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
       TRUST_PROXY: ${TRUST_PROXY:-false}
       ROOM_TTL_DAYS: ${ROOM_TTL_DAYS:-0}
       MAX_DOC_CHARS: ${MAX_DOC_CHARS:-0}

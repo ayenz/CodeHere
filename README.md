@@ -16,7 +16,7 @@ A minimal, accessible, real-time collaborative code editor. Open a room, share t
 - Download the code as a file
 
 **Operations**
-- **Admin page** (`/admin`): stats, search rooms, view, lock/unlock and delete rooms
+- **Admin page** on its own subdomain (e.g. `admin.example.com`): stats, search rooms, view, lock/unlock and delete rooms. Every path on the main domain stays available for rooms — even `/admin`.
 - Pick your database: **SQLite** (default, zero setup), **MySQL** or **PostgreSQL**
 - Optional limits: document size, message size and rate, connections per IP, new rooms per hour — all off by default
 - One Node process, one WebSocket per tab, ~20–40 bytes per keystroke
@@ -52,7 +52,9 @@ Copy `.env.example` to `.env` and adjust.
 | `DB_DRIVER` | `sqlite` | `sqlite`, `mysql` or `postgres` |
 | `SQLITE_PATH` | `./data/codehere.db` | SQLite file (when `DB_DRIVER=sqlite`) |
 | `DATABASE_URL` | — | e.g. `mysql://user:pass@host:3306/codehere` or `postgres://user:pass@host:5432/codehere` |
-| `ADMIN_PASSWORD` | — | Enables the admin page at `/admin`. Disabled when empty. |
+| `ADMIN_PASSWORD` | — | Admin password. The admin page is disabled unless this and `ADMIN_HOST` are set. |
+| `ADMIN_HOST` | — | Host that serves the admin page and API, e.g. `admin.example.com` (`admin.localhost` in development) |
+| `PUBLIC_URL` | derived | Editor URL for links from the admin page, e.g. `https://example.com`. Defaults to `ADMIN_HOST` without its first label. |
 | `TRUST_PROXY` | `false` | Read client IPs from `X-Forwarded-For` (only behind your own reverse proxy) |
 | `ROOM_TTL_DAYS` | `0` | Delete rooms not edited for this many days (`0` = keep forever) |
 | `PERSIST_DEBOUNCE_MS` | `2000` | Delay before writing changes to the database (at most 10 s while editing) |
@@ -87,7 +89,23 @@ DB_DRIVER=mysql DATABASE_URL=mysql://codehere:codehere@mysql:3306/codehere \
   docker compose --profile mysql up -d --build
 ```
 
-Add `ADMIN_PASSWORD=…` to enable the admin page. The image runs as a non-root user and stores SQLite data in `/data`.
+Add `ADMIN_PASSWORD=…` and `ADMIN_HOST=admin.example.com` to enable the admin page. The image runs as a non-root user and stores SQLite data in `/data`.
+
+## Admin page
+
+The admin page lives on its own host so that no room name is reserved for it:
+
+1. Point DNS for `admin.example.com` at the same server as `example.com`.
+2. Set `ADMIN_PASSWORD` and `ADMIN_HOST=admin.example.com`.
+3. Make your reverse proxy forward both hosts to CodeHere, keeping the `Host` header (or send `X-Forwarded-Host` with `TRUST_PROXY=true`). For example, with Caddy:
+
+   ```
+   example.com, admin.example.com {
+     reverse_proxy localhost:3000
+   }
+   ```
+
+The admin API only answers on `ADMIN_HOST`, and the admin host serves nothing but the admin page. In development, open `http://admin.localhost:5173` (`*.localhost` resolves to your machine in Chrome and Firefox).
 
 ## Architecture
 
@@ -98,7 +116,7 @@ client/  Vite + TypeScript (no framework)
 server/  Node + ws                                  ▼        + status messages (type 100)
   /ws/:room, /ws/v/:viewId ── RoomManager ── Y.Doc + Awareness per room (in memory)
                      └── debounced snapshot ──► Kysely ──► SQLite | MySQL | PostgreSQL
-  /api/admin/*, /api/rooms/:id  (admin API, owner delete)
+  /api/rooms/:id (owner delete) · ADMIN_HOST: admin page + /api/admin/*
 ```
 
 - Each room is one `Y.Doc`: text in `getText('code')`, shared settings in `getMap('meta')`.

@@ -64,8 +64,16 @@ describe('sync', () => {
     await second.stop()
   })
 
+  test('"admin" is an ordinary room name', async () => {
+    const a = client(server.ws, 'admin')
+    await synced(a)
+    a.text.insert(0, 'not the admin page')
+    await until(() => server.app.rooms.activeRoomIds().includes('admin'), 'room "admin" opened')
+    a.destroy()
+  })
+
   test('reserved and malformed room IDs are rejected', async () => {
-    for (const path of ['admin', 'api', 'ab', 'bad%20id']) {
+    for (const path of ['api', 'assets', 'ab', 'bad%20id']) {
       const status = await fetch(`${server.http}/ws/${path}`, {
         headers: { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==' },
       })

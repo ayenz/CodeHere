@@ -1,35 +1,63 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
-import { client, roomId, start, synced, testConfig, until, type Running } from './helpers.js'
+import { hostname } from '../src/config.js'
+import { client, requestWithHost, roomId, start, synced, testConfig, until, type Running } from './helpers.js'
 
 const HEADERS = { 'x-requested-with': 'codehere', 'content-type': 'application/json' }
+const ADMIN_HOST = 'admin.test'
 
 describe('admin API', () => {
   let server: Running
   let cookie = ''
 
-  async function api(path: string, init: RequestInit = {}) {
-    return fetch(`${server.http}/api/admin${path}`, {
-      ...init,
-      headers: { ...HEADERS, cookie, ...(init.headers as Record<string, string>) },
+  async function api(path: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) {
+    const res = await requestWithHost(`${server.http}/api/admin${path}`, ADMIN_HOST, {
+      method: init.method,
+      body: init.body,
+      headers: { ...HEADERS, cookie, ...init.headers },
     })
+    return { ...res, json: () => JSON.parse(res.body) }
   }
 
   before(async () => {
-    server = await start(testConfig({ adminPassword: 'correct horse' }))
+    server = await start(testConfig({ adminPassword: 'correct horse', adminHost: ADMIN_HOST }))
   })
   after(() => server.stop())
 
-  test('is disabled without ADMIN_PASSWORD', async () => {
-    const disabled = await start(testConfig())
-    const res = await fetch(`${disabled.http}/api/admin/session`)
-    assert.equal(res.status, 404)
-    await disabled.stop()
+  test('is disabled without ADMIN_PASSWORD or ADMIN_HOST', async () => {
+    for (const overrides of [{ adminHost: ADMIN_HOST }, { adminPassword: 'x' }]) {
+      const disabled = await start(testConfig(overrides))
+      const res = await requestWithHost(`${disabled.http}/api/admin/session`, ADMIN_HOST)
+      assert.equal(res.status, 404)
+      await disabled.stop()
+    }
+  })
+
+  test('only answers on ADMIN_HOST', async () => {
+    assert.equal((await requestWithHost(`${server.http}/api/admin/session`, 'example.com')).status, 404)
+    assert.equal((await fetch(`${server.http}/api/admin/session`)).status, 404)
+    assert.equal((await requestWithHost(`${server.http}/api/admin/session`, 'Admin.Test:8080')).status, 401)
+  })
+
+  test('the admin host does not serve rooms', async () => {
+    const res = await requestWithHost(`${server.http}/ws/someroom1`, ADMIN_HOST, {
+      headers: { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==' },
+    })
+    assert.equal(res.status, 400)
+  })
+
+  test('normalises host names', () => {
+    assert.equal(hostname('https://Admin.Example.com:8443/'), 'admin.example.com')
+    assert.equal(hostname('admin.localhost:5173'), 'admin.localhost')
+    assert.equal(hostname('[::1]:3000'), '[::1]')
   })
 
   test('requires a session and the CSRF header', async () => {
-    assert.equal((await fetch(`${server.http}/api/admin/stats`)).status, 401)
-    const noHeader = await fetch(`${server.http}/api/admin/login`, { method: 'POST', body: '{"password":"x"}' })
+    assert.equal((await requestWithHost(`${server.http}/api/admin/stats`, ADMIN_HOST)).status, 401)
+    const noHeader = await requestWithHost(`${server.http}/api/admin/login`, ADMIN_HOST, {
+      method: 'POST',
+      body: '{"password":"x"}',
+    })
     assert.equal(noHeader.status, 403)
   })
 
@@ -38,11 +66,14 @@ describe('admin API', () => {
     assert.equal(wrong.status, 401)
     const right = await api('/login', { method: 'POST', body: JSON.stringify({ password: 'correct horse' }) })
     assert.equal(right.status, 204)
-    const setCookie = right.headers.get('set-cookie') ?? ''
+    const setCookie = String(right.headers['set-cookie'] ?? '')
     assert.match(setCookie, /HttpOnly/)
     assert.match(setCookie, /SameSite=Strict/)
     cookie = setCookie.split(';')[0]
-    assert.equal((await api('/session')).status, 200)
+    const session = await api('/session')
+    assert.equal(session.status, 200)
+    // admin.test → test: links to rooms leave the admin subdomain.
+    assert.equal(session.json().editorOrigin, 'http://test')
   })
 
   test('reports stats and lists, shows, locks and deletes rooms', async () => {
@@ -55,17 +86,17 @@ describe('admin API', () => {
     // Wait for the debounced save so the room is in the database.
     await until(() => false, 'save', 200).catch(() => {})
 
-    const stats = await (await api('/stats')).json()
+    const stats = (await api('/stats')).json()
     assert.ok(stats.totalRooms >= 1)
     assert.ok(stats.connections >= 1)
 
-    const list = await (await api(`/rooms?q=${room}`)).json()
+    const list = (await api(`/rooms?q=${room}`)).json()
     assert.equal(list.total, 1)
     assert.equal(list.rooms[0].id, room)
     assert.equal(list.rooms[0].online, 1)
     assert.ok(list.rooms[0].sizeBytes > 0)
 
-    const detail = await (await api(`/rooms/${room}`)).json()
+    const detail = (await api(`/rooms/${room}`)).json()
     assert.equal(detail.text, 'print("hi")')
     assert.equal(detail.language, 'Python')
 
