@@ -7,7 +7,8 @@
   "type": "module",
   "workspaces": [
     "client",
-    "server"
+    "server",
+    "cloudflare"
   ],
   "engines": {
     "node": ">=22"
@@ -16,9 +17,10 @@
     "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client && npm run build -w server",
     "start": "npm run start -w server",
-    "typecheck": "npm run typecheck -w client && npm run typecheck -w server",
+    "typecheck": "npm run typecheck -w client && npm run typecheck -w server && npm run typecheck -w cloudflare",
     "test": "npm test -w server",
-    "test:e2e": "playwright test -c e2e/playwright.config.ts"
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e:cloudflare": "E2E_TARGET=cloudflare playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
@@ -28,6 +30,7 @@
   "allowScripts": {
     "better-sqlite3": true,
     "esbuild": true,
-    "fsevents": false
+    "fsevents": false,
+    "workerd": true
   }
 }

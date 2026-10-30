@@ -6,8 +6,9 @@ export interface Stats {
   totalRooms: number
   activeRooms: number
   connections: number
-  uptimeSeconds: number
-  memoryRssBytes: number
+  /** Null where there is no single long-running process (e.g. Cloudflare Workers). */
+  uptimeSeconds: number | null
+  memoryRssBytes: number | null
   dbDriver: DbDriver | string
   roomTtlDays: number
   maxDocChars: number
@@ -133,8 +134,8 @@ export async function getStats(signal?: AbortSignal): Promise<Stats> {
     totalRooms: num(data.totalRooms),
     activeRooms: num(data.activeRooms),
     connections: num(data.connections),
-    uptimeSeconds: num(data.uptimeSeconds),
-    memoryRssBytes: num(data.memoryRssBytes),
+    uptimeSeconds: typeof data.uptimeSeconds === 'number' ? num(data.uptimeSeconds) : null,
+    memoryRssBytes: typeof data.memoryRssBytes === 'number' ? num(data.memoryRssBytes) : null,
     dbDriver: str(data.dbDriver) ?? 'unknown',
     roomTtlDays: num(data.roomTtlDays),
     maxDocChars: num(data.maxDocChars),

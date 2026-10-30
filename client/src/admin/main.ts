@@ -225,12 +225,15 @@ function renderStats(stats: Stats | null): void {
     ['Rooms', value((s) => formatNumber(s.totalRooms))],
     ['Active rooms', value((s) => formatNumber(s.activeRooms))],
     ['Connections', value((s) => formatNumber(s.connections))],
-    ['Uptime', value((s) => formatDuration(s.uptimeSeconds))],
-    ['Memory (RSS)', value((s) => formatBytes(s.memoryRssBytes))],
-    ['Database', value((s) => s.dbDriver)],
-    ['Room expiry', value((s) => (s.roomTtlDays > 0 ? `${formatNumber(s.roomTtlDays)} days` : 'Never'))],
-    ['Max document', value((s) => `${formatNumber(s.maxDocChars)} chars`)],
   ]
+  // Skipped where the backend has no single process to measure (Cloudflare Workers).
+  if (stats?.uptimeSeconds != null) tiles.push(['Uptime', formatDuration(stats.uptimeSeconds)])
+  if (stats?.memoryRssBytes != null) tiles.push(['Memory (RSS)', formatBytes(stats.memoryRssBytes)])
+  tiles.push(
+    ['Database', value((s) => (s.dbDriver === 'cloudflare' ? 'Durable Objects' : s.dbDriver))],
+    ['Room expiry', value((s) => (s.roomTtlDays > 0 ? `${formatNumber(s.roomTtlDays)} days` : 'Never'))],
+    ['Max document', value((s) => (s.maxDocChars > 0 ? `${formatNumber(s.maxDocChars)} chars` : 'Unlimited'))],
+  )
   statsList.replaceChildren(...tiles.map(([label, text]) => h('div', { class: 'stat' }, h('dt', {}, label), h('dd', {}, text))))
 }
 

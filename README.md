@@ -3,6 +3,8 @@
 **A minimal, accessible, real-time collaborative code editor you can host yourself.**
 Open a room, share the link, and write code together. No sign-up, no tracking.
 
+**[Try the live demo →](https://codehere.ayenz.workers.dev)** (rooms on the demo are deleted after 7 days without edits)
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/screenshot-dark.png">
   <img alt="A CodeHere room: TypeScript code with two other people's cursors, a highlighted linked line, and the toolbar with language, format, download, theme and share buttons." src="docs/images/screenshot-light.png">
@@ -44,6 +46,7 @@ Open a room, share the link, and write code together. No sign-up, no tracking.
 - **Admin page** on its own subdomain: stats, room search, view, lock/unlock and delete rooms.
 - Optional limits for public instances (document size, message rate, connections and new rooms per IP…), all off by default.
 - Docker image, Docker Compose with automatic HTTPS (Caddy), and a systemd + nginx setup.
+- Or run it **serverless on Cloudflare Workers + Durable Objects**, within the free plan. The demo runs this way.
 - Light on the wire: about 20–40 bytes per keystroke. About 190 KB of JavaScript and CSS (gzipped) on first load.
 
 **Accessible**
@@ -148,6 +151,8 @@ Docker Compose also uses `PUBLISH` (where the app port is published), `DOMAIN` (
 - Using PostgreSQL, MySQL or a managed database.
 - Hardening a public instance, what is stored, backups, upgrades and troubleshooting.
 
+**No server at all?** [docs/cloudflare.md](docs/cloudflare.md) shows how to run CodeHere on Cloudflare Workers + Durable Objects, free for small use, with automatic deploys from GitHub.
+
 ## Admin page
 
 The admin page has its own host name, so every path on the editor stays free for rooms (even `/admin`).
@@ -186,6 +191,7 @@ See [What CodeHere stores](docs/deployment.md#what-codehere-stores) for the full
 ```
 client/           Vite app: editor (index.html, src/) and admin page (admin.html, src/admin/)
 server/           Node server: src/ (app, rooms, db, admin, config), test/ (node:test)
+cloudflare/       The same backend as Cloudflare Workers + Durable Objects (used by the demo)
 e2e/              Playwright end-to-end and accessibility tests
 deploy/           Caddyfile, nginx and systemd examples
 docs/             Deployment guide and images
@@ -199,6 +205,8 @@ docs/             Deployment guide and images
 | `npm run typecheck` | Type-check both packages |
 | `npm test` | Server tests. They use `DB_DRIVER`/`DATABASE_URL`, so the same suite runs against PostgreSQL or MySQL. |
 | `npm run test:e2e` | Playwright tests against the production build (run `npm run build` first; set `E2E_BROWSER` to use an installed Chromium-based browser instead of downloading one) |
+| `npm run test:e2e:cloudflare` | The same end-to-end tests against the Cloudflare Workers backend (`wrangler dev`) |
+| `npm run dev -w cloudflare` | Run the Cloudflare editor Worker locally on http://127.0.0.1:8787 |
 | `npm run smoke -w server` | Quick sync and persistence check against a running server |
 
 To run the server tests against PostgreSQL:
@@ -210,7 +218,7 @@ DB_DRIVER=postgres DATABASE_URL=postgres://codehere:codehere@localhost:5432/code
 
 ## Contributing
 
-Issues and pull requests are welcome. CI runs the type check, the server tests against SQLite, PostgreSQL and MySQL, the end-to-end and accessibility tests, and a Docker build.
+Issues and pull requests are welcome. CI runs the type check, the server tests against SQLite, PostgreSQL and MySQL, the end-to-end and accessibility tests against both backends (Node.js and Cloudflare Workers), and a Docker build. Pushes to `main` that pass everything are deployed to the demo automatically.
 
 When you change the UI, keep it usable with a keyboard and a screen reader. That means labelling every control, keeping text contrast at WCAG AA or better, and announcing anything that changes without a page load. The axe checks in `e2e/` catch many problems, but not all of them.
 

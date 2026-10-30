@@ -4,9 +4,11 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 COPY client/package.json client/
 COPY server/package.json server/
-RUN npm ci
+COPY cloudflare/package.json cloudflare/
+# Only the Node.js server and the client; the Cloudflare backend (and workerd) isn't needed here.
+RUN npm ci --workspace client --workspace server --include-workspace-root
 COPY . .
-RUN npm run build && npm prune --omit=dev
+RUN npm run build && npm prune --omit=dev --workspace client --workspace server --include-workspace-root
 
 FROM node:24-alpine
 WORKDIR /app

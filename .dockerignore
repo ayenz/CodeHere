@@ -8,3 +8,7 @@ docs
 deploy
 e2e
 test-results
+cloudflare/src
+cloudflare/*.jsonc
+cloudflare/.wrangler
+cloudflare/.admin-password

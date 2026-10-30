@@ -1,0 +1,27 @@
+// The admin page, on its own workers.dev host. It reaches the editor's rooms through
+// Durable Object bindings to the "codehere" Worker. Set the password with:
+//   npx wrangler secret put ADMIN_PASSWORD -c admin.wrangler.jsonc
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "codehere-admin",
+  "main": "src/admin.ts",
+  "compatibility_date": "2026-10-23",
+  "workers_dev": true,
+  "assets": {
+    "directory": "../client/dist",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "Room", "script_name": "codehere" },
+      { "name": "REGISTRY", "class_name": "Registry", "script_name": "codehere" }
+    ]
+  },
+  "vars": {
+    "PUBLIC_URL": "https://codehere.ayenz.workers.dev",
+    "MAX_DOC_CHARS": "100000",
+    "ROOM_TTL_DAYS": "7"
+  },
+  "observability": { "enabled": true }
+}

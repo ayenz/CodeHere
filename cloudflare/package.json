@@ -1,0 +1,23 @@
+{
+  "name": "@codehere/cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CodeHere on Cloudflare Workers + Durable Objects (used for the public demo).",
+  "scripts": {
+    "dev": "wrangler dev -c wrangler.jsonc --port 8787",
+    "dev:admin": "wrangler dev -c admin.wrangler.jsonc --port 8788",
+    "deploy": "wrangler deploy -c wrangler.jsonc && wrangler deploy -c admin.wrangler.jsonc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lib0": "^0.2.0",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261030.1",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.156.0"
+  }
+}

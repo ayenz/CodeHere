@@ -12,3 +12,10 @@ ANALYSIS.md
 # Playwright
 test-results/
 playwright-report/
+
+# Cloudflare local state
+.wrangler/
+.dev.vars*
+
+# Locally generated admin password for the Cloudflare demo
+cloudflare/.admin-password
