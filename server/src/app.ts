@@ -1,0 +1,187 @@
+import { existsSync } from 'node:fs'
+import { createServer, type IncomingMessage, type Server } from 'node:http'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import sirv from 'sirv'
+import { WebSocketServer, type WebSocket } from 'ws'
+import { createAdminHandler } from './admin.js'
+import type { Config } from './config.js'
+import { openRoomStore, type RoomStore } from './db.js'
+import { isRoomId, RoomManager, type Access } from './rooms.js'
+
+const HEARTBEAT_MS = 30_000
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000
+
+export interface App {
+  server: Server
+  rooms: RoomManager
+  store: RoomStore
+  /** Saves every open room and closes connections and the database. */
+  close(): Promise<void>
+}
+
+/** Parses /ws/<roomId> (edit) and /ws/v/<viewId> (read-only). */
+function parseAccess(pathname: string, searchParams: URLSearchParams): Access | null {
+  const view = /^\/ws\/v\/([^/]+)$/.exec(pathname)
+  if (view) {
+    const viewId = decodeURIComponent(view[1])
+    return /^[A-Za-z0-9_-]{4,32}$/.test(viewId) ? { kind: 'view', viewId } : null
+  }
+  const edit = /^\/ws\/([^/]+)$/.exec(pathname)
+  if (edit) {
+    const roomId = decodeURIComponent(edit[1])
+    const ownerToken = searchParams.get('owner') ?? undefined
+    return isRoomId(roomId) ? { kind: 'edit', roomId, ownerToken } : null
+  }
+  return null
+}
+
+export async function createApp(config: Config): Promise<App> {
+  const startedAt = Date.now()
+  const store = await openRoomStore(config)
+  const rooms = new RoomManager(store, config.limits, config.persistDebounceMs)
+
+  function clientIp(req: IncomingMessage): string {
+    if (config.trustProxy) {
+      const forwarded = req.headers['x-forwarded-for']
+      const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim()
+      if (first) return first
+    }
+    return req.socket.remoteAddress ?? 'unknown'
+  }
+
+  const handleAdmin = createAdminHandler({ config, rooms, store, startedAt, clientIp })
+
+  /** DELETE /api/rooms/:id with the creator's X-Owner-Token. */
+  async function deleteAsOwner(req: IncomingMessage, id: string): Promise<number> {
+    const token = req.headers['x-owner-token']
+    if (req.headers['x-requested-with'] !== 'codehere' || typeof token !== 'string' || !token) return 403
+    if (!isRoomId(id)) return 404
+    const owner = await rooms.isOwner(id, token)
+    if (owner === null) return 404
+    if (!owner) return 403
+    await rooms.delete(id)
+    return 204
+  }
+
+  // Serve the built client when it exists (production). In development Vite serves it.
+  const here = dirname(fileURLToPath(import.meta.url))
+  const staticDir = resolve(config.staticDir ?? resolve(here, '../../client/dist'))
+  const serveStatic = existsSync(staticDir)
+    ? sirv(staticDir, {
+        single: true,
+        etag: true,
+        gzip: true,
+        brotli: true,
+        setHeaders(res, pathname) {
+          // Hashed assets never change; the HTML must be revalidated so deploys take effect.
+          res.setHeader(
+            'Cache-Control',
+            pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+          )
+        },
+      })
+    : null
+
+  const server = createServer((req, res) => {
+    const { pathname } = new URL(req.url ?? '/', 'http://localhost')
+    if (pathname === '/healthz') {
+      res.writeHead(200, { 'content-type': 'text/plain' }).end('ok')
+      return
+    }
+    if (pathname === '/api/config') {
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ maxDocChars: config.limits.maxDocChars }))
+      return
+    }
+    const ownerDelete = /^\/api\/rooms\/([^/]+)$/.exec(pathname)
+    if (ownerDelete && req.method === 'DELETE') {
+      deleteAsOwner(req, decodeURIComponent(ownerDelete[1]))
+        .then((status) => res.writeHead(status).end())
+        .catch((error) => {
+          console.error('[api] delete failed', error)
+          res.writeHead(500).end()
+        })
+      return
+    }
+    if (pathname.startsWith('/api/')) {
+      handleAdmin(req, res, pathname)
+        .then((handled) => {
+          if (!handled) res.writeHead(404, { 'content-type': 'application/json' }).end('{"error":"Not found"}')
+        })
+        .catch((error) => {
+          console.error('[api] request failed', error)
+          if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' })
+          res.end('{"error":"Internal error"}')
+        })
+      return
+    }
+    if (serveStatic) {
+      serveStatic(req, res, () => {
+        res.writeHead(404).end('Not found')
+      })
+      return
+    }
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('Client not built. Run `npm run build`.')
+  })
+
+  const wss = new WebSocketServer({ noServer: true, maxPayload: config.limits.maxMessageBytes })
+  const alive = new WeakSet<WebSocket>()
+
+  server.on('upgrade', (req, socket, head) => {
+    const { pathname, searchParams } = new URL(req.url ?? '/', 'http://localhost')
+    const access = parseAccess(pathname, searchParams)
+    if (!access) {
+      socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
+      return
+    }
+    wss.handleUpgrade(req, socket, head, (conn) => {
+      alive.add(conn)
+      conn.on('pong', () => alive.add(conn))
+      rooms.connect(conn, access, clientIp(req))
+    })
+  })
+
+  const heartbeat = setInterval(() => {
+    for (const conn of wss.clients) {
+      if (!alive.has(conn)) {
+        conn.terminate()
+        continue
+      }
+      alive.delete(conn)
+      conn.ping()
+    }
+  }, HEARTBEAT_MS)
+
+  async function cleanupExpiredRooms(): Promise<void> {
+    rooms.pruneCounters()
+    if (config.roomTtlDays === 0) return
+    const cutoff = Date.now() - config.roomTtlDays * 24 * 60 * 60 * 1000
+    try {
+      const deleted = await store.deleteOlderThan(cutoff, rooms.activeRoomIds())
+      if (deleted > 0) console.log(`[cleanup] deleted ${deleted} expired room(s)`)
+    } catch (error) {
+      console.error('[cleanup] failed', error)
+    }
+  }
+  void cleanupExpiredRooms()
+  const cleanup = setInterval(() => void cleanupExpiredRooms(), CLEANUP_INTERVAL_MS)
+
+  return {
+    server,
+    rooms,
+    store,
+    async close() {
+      clearInterval(heartbeat)
+      clearInterval(cleanup)
+      for (const conn of wss.clients) conn.close(1001, 'Server shutting down')
+      const closed = new Promise<void>((done) => server.close(() => done()))
+      // Idle keep-alive sockets would otherwise hold close() open.
+      server.closeIdleConnections()
+      await closed
+      await rooms.closeAll()
+      await store.close()
+    },
+  }
+}
