@@ -1,0 +1,47 @@
+# Production-style deployment. Default uses SQLite in a volume.
+#   docker compose up -d                       # SQLite
+#   docker compose --profile postgres up -d    # + Postgres (set DB_DRIVER/DATABASE_URL below)
+#   docker compose --profile mysql up -d       # + MySQL
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DB_DRIVER: ${DB_DRIVER:-sqlite}
+      SQLITE_PATH: /data/codehere.db
+      DATABASE_URL: ${DATABASE_URL:-}
+      ROOM_TTL_DAYS: ${ROOM_TTL_DAYS:-30}
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+
+  postgres:
+    profiles: [postgres]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: codehere
+      POSTGRES_PASSWORD: codehere
+      POSTGRES_DB: codehere
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+  mysql:
+    profiles: [mysql]
+    image: mysql:8.4
+    environment:
+      MYSQL_USER: codehere
+      MYSQL_PASSWORD: codehere
+      MYSQL_DATABASE: codehere
+      MYSQL_ROOT_PASSWORD: codehere-root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+volumes:
+  app-data:
+  pg-data:
+  mysql-data:
