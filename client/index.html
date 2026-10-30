@@ -55,10 +55,11 @@
         <label class="sr-only" for="language">Language</label>
         <select id="language" class="ghost select"></select>
 
-        <button id="format" class="ghost icon" type="button" aria-label="Format code (Shift+Alt+F)" title="Format code (Shift+Alt+F)" hidden>
+        <button id="format" class="ghost labeled" type="button" title="Format code">
           <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 6h16M4 10h10M4 14h16M4 18h10" />
+            <path d="m4 20 9-9m2-6 1-2 1 2 2 1-2 1-1 2-1-2-2-1 2-1ZM18 12l.7 1.3 1.3.7-1.3.7L18 16l-.7-1.3L16 14l1.3-.7L18 12Z" />
           </svg>
+          <span class="label">Format</span>
         </button>
 
         <button id="download" class="ghost icon" type="button" aria-label="Download file" title="Download file">
@@ -147,7 +148,10 @@
         <button id="stop-following" class="ghost compact-button" type="button">Stop</button>
       </span>
       <div class="statusbar-end">
-        <span class="hint">Press <kbd>Esc</kbd> then <kbd>Tab</kbd> to leave the editor</span>
+        <button id="shortcuts-button" class="ghost compact-button shortcuts-button" type="button" aria-haspopup="dialog">
+          <kbd aria-hidden="true">?</kbd>
+          <span>Shortcuts</span>
+        </button>
         <label class="sr-only" for="editor-theme">Editor theme</label>
         <select id="editor-theme" class="ghost select compact" title="Editor theme"></select>
         <button id="settings-button" class="ghost icon small-icon" type="button" popovertarget="settings-popover" aria-expanded="false" aria-label="Editor settings" title="Editor settings">
@@ -185,6 +189,7 @@
       </label>
     </div>
 
+    <p id="editor-help" class="sr-only">Press Escape then Tab to leave the editor. Press F1 for keyboard shortcuts.</p>
     <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <!-- Visual-only toast; screen readers get the same message from #announcer. -->
     <div id="toast" class="toast" aria-hidden="true"></div>
@@ -200,6 +205,21 @@
           <button class="share" value="save">Save</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="shortcuts-dialog" class="shortcuts-dialog" aria-labelledby="shortcuts-title">
+      <div class="dialog-body">
+        <div class="dialog-header">
+          <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+          <button id="shortcuts-close" class="ghost icon" type="button" aria-label="Close" autofocus>
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+        <div id="shortcuts-body" class="shortcuts-body"></div>
+        <p class="muted small">With Vim or Emacs key bindings (editor settings), their own keys apply inside the editor.</p>
+      </div>
     </dialog>
 
     <dialog id="delete-dialog" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-text">

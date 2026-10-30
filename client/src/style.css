@@ -133,7 +133,7 @@ kbd {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   padding-left: 8px;
   border-left: 1px solid var(--border);
 }
@@ -526,6 +526,102 @@ body.viewing #delete-room {
   color: var(--bg);
 }
 
+/* Controls sit close together, so draw their focus ring inside the edge where it can't
+   cover a neighbour. */
+.ghost:focus-visible,
+.share:focus-visible,
+.field:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ---- Labelled buttons and shortcuts ---------------------------------------------- */
+
+.ghost.labeled {
+  padding: 0 10px 0 8px;
+}
+
+/* Still focusable and clickable (it explains why), but visibly unavailable. */
+.ghost[aria-disabled='true'] {
+  opacity: 0.55;
+}
+
+.ghost[aria-disabled='true']:hover {
+  background: transparent;
+  color: var(--fg-muted);
+}
+
+.shortcuts-button {
+  gap: 6px;
+  color: var(--fg-muted);
+  box-shadow: none;
+}
+
+.shortcuts-button kbd {
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.shortcuts-button:hover {
+  color: var(--fg);
+}
+
+dialog.shortcuts-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 32px));
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shortcuts-body {
+  display: grid;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+table.shortcuts {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+table.shortcuts caption {
+  padding-bottom: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+table.shortcuts th,
+table.shortcuts td {
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+
+table.shortcuts th {
+  padding-right: 16px;
+  font-weight: 400;
+  text-align: left;
+}
+
+table.shortcuts td {
+  color: var(--fg-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+table.shortcuts kbd {
+  font-size: 12px;
+  color: var(--fg);
+}
+
 /* ---- Following ------------------------------------------------------------------ */
 
 .following {
@@ -682,9 +778,17 @@ dialog::backdrop {
     padding: 8px 8px 8px 12px;
   }
 
-  .room-id,
-  .hint {
+  .room-id {
     display: none;
+  }
+
+  /* Keyboard shortcuts matter less on touch screens; keep only the "?" key. */
+  .shortcuts-button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
   }
 
   /* Row 1: brand + people. Row 2: full-width toolbar. */

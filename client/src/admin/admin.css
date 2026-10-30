@@ -30,6 +30,14 @@ body {
   outline-offset: 2px;
 }
 
+/* Buttons and fields sit close together, so draw their focus ring inside the edge where
+   it can't cover a neighbour. */
+.ghost:focus-visible,
+.primary:focus-visible,
+.field:focus-visible {
+  outline-offset: -2px;
+}
+
 :focus:not(:focus-visible) {
   outline: none;
 }

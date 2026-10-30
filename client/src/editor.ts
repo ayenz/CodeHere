@@ -119,7 +119,7 @@ export function createEditor(
         settings.of([]),
         readOnly.of([]),
         docLimit.of([]),
-        EditorView.contentAttributes.of({ 'aria-label': 'Code', 'aria-multiline': 'true' }),
+        EditorView.contentAttributes.of({ 'aria-label': 'Code', 'aria-multiline': 'true', 'aria-describedby': 'editor-help' }),
         EditorView.updateListener.of((update) => {
           if (update.selectionSet || update.docChanged) options.onSelection(update.view)
         }),

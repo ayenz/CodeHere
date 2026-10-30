@@ -89,15 +89,17 @@ Open http://localhost:5173. Edits reload automatically. To try the admin page, c
 | Point someone at some lines | Click a line number (shift-click to extend), or select lines and use **Share → Point links to the selected lines**. |
 | Follow someone | Click their avatar in the top bar. Click it again, press **Stop**, or start typing to stop following. |
 | Change the language | Use the language menu. **Auto-detect** guesses from the code; any explicit choice applies to everyone in the room. |
-| Format the code | Click the format button or press <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> (shown when the language is supported). |
+| Format the code | Click **Format** in the toolbar or press <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> (<kbd>⌥⇧F</kbd> on a Mac). For a language Prettier can't format, the button tells you which languages it supports. |
+| See every shortcut | Click **Shortcuts** in the bottom-right corner, or press <kbd>F1</kbd> or <kbd>?</kbd>. |
 | Change your name | Click your own avatar (the one with a ring). |
 | Theme, font, indentation, Vim/Emacs | Bottom-right corner: the theme menu and the settings button. These only affect you. |
 | Delete a room | Use the trash button. It only appears in the browser that created the room. |
 
-**Keyboard shortcuts**
+**Keyboard shortcuts.** The full list is in the app: press <kbd>F1</kbd>. It shows Mac symbols (⌘⌥⇧) on a Mac. The most useful ones:
 
 | Shortcut | Action |
 |---|---|
+| <kbd>F1</kbd> or <kbd>?</kbd> | Show all keyboard shortcuts |
 | <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> | Format the document |
 | <kbd>Esc</kbd> then <kbd>Tab</kbd> | Move focus out of the editor |
 | <kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd> | Indent / outdent |

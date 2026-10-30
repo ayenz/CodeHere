@@ -38,6 +38,44 @@ test('language is detected automatically and can be formatted', async ({ page })
   await expect(page.locator('#toast')).toHaveText('Formatted as JavaScript')
 })
 
+test('formatting is easy to find and explains when it cannot help', async ({ page }) => {
+  await openNewRoom(page)
+  await expect(page.locator('#format')).toBeVisible()
+  await expect(page.locator('#format')).toHaveText('Format')
+
+  // Plain prose: the button stays visible but says why it can't format.
+  await typeCode(page, 'just some notes')
+  await expect(page.locator('#format')).toHaveAttribute('aria-disabled', 'true')
+  // aria-disabled keeps it clickable for people (it explains itself); Playwright needs force.
+  await page.locator('#format').click({ force: true })
+  await expect(page.locator('#toast')).toContainText("Formatting isn't available")
+
+  // JavaScript: the keyboard shortcut formats.
+  await page.locator('.cm-content').press('ControlOrMeta+a')
+  await page.keyboard.insertText('const greet=(name)=>{return `Hello ${name}`}\nfunction add(a,b){return a+b}\nconsole.log(greet("x"))\n')
+  await expect(page.locator('#language option:checked')).toHaveText('Auto · JavaScript')
+  await expect(page.locator('#format')).toHaveAttribute('aria-disabled', 'false')
+  await page.locator('.cm-content').press('Shift+Alt+KeyF')
+  await expect(page.locator('.cm-content')).toContainText('function add(a, b) {')
+})
+
+test('keyboard shortcuts are listed in a dialog', async ({ page }) => {
+  await openNewRoom(page)
+  await page.locator('#shortcuts-button').click()
+  const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('rowheader', { name: /Format the code/ })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+
+  // F1 works from inside the editor too.
+  await page.locator('.cm-content').click()
+  await page.keyboard.press('F1')
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect(dialog).toBeHidden()
+})
+
 test('view-only links can read but not edit', async ({ page, browser }) => {
   await openNewRoom(page)
   await typeCode(page, 'secret = 1')

@@ -11,6 +11,7 @@ import { describeLines, formatLineHash, lineLinks, parseLineHash, selectedLines,
 import { announce, notify } from './notify'
 import { createPeople } from './people'
 import { setUpSettings } from './settings'
+import { FORMAT_KEYS, setUpShortcuts, shortcutLabel } from './shortcuts'
 import { setUpThemes } from './theme'
 
 const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]{4,32}$/
@@ -73,6 +74,7 @@ const editor = createEditor($('editor'), ytext, awareness, {
 })
 const getSettings = setUpSettings(editor)
 setUpThemes(editor)
+setUpShortcuts()
 const people = createPeople({
   awareness,
   doc,
@@ -248,13 +250,35 @@ void applyLanguage()
 
 // --- Format with Prettier --------------------------------------------------------
 
+const FORMAT_TIP_KEY = 'codehere:tip-format'
+const formatShortcut = shortcutLabel(FORMAT_KEYS)
+
+// Always visible for editors so people can find it; explains itself when the language isn't supported.
 function updateFormatButton(): void {
-  formatButton.hidden = readOnly || !canFormat(effectiveLanguage())
+  const language = effectiveLanguage()
+  const supported = canFormat(language)
+  formatButton.hidden = readOnly
+  formatButton.setAttribute('aria-disabled', String(!supported))
+  formatButton.title = supported
+    ? `Format ${language} code (${formatShortcut})`
+    : `Formatting isn't available for ${language === PLAIN_TEXT ? 'plain text' : language}`
+  formatButton.setAttribute('aria-keyshortcuts', 'Shift+Alt+F')
+
+  // A one-time hint the first time someone writes code that can be formatted.
+  if (supported && !readOnly && provider.synced && ytext.length > 40 && !readSetting(FORMAT_TIP_KEY)) {
+    writeSetting(FORMAT_TIP_KEY, 'shown')
+    window.setTimeout(() => notify(`Tip: press ${formatShortcut} to format your ${language} code`), 1500)
+  }
 }
 
 async function formatDocument(): Promise<void> {
   const language = effectiveLanguage()
-  if (readOnly || !canFormat(language)) return
+  if (readOnly) return
+  if (!canFormat(language)) {
+    const name = language === PLAIN_TEXT ? 'plain text' : language
+    notify(`Formatting isn't available for ${name}. It works for JavaScript, TypeScript, JSON, CSS, HTML, Vue, Markdown and YAML.`)
+    return
+  }
   const before = editor.view.state.doc.toString()
   try {
     const { indent } = getSettings()
