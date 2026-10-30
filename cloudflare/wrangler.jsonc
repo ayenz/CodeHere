@@ -20,7 +20,8 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room", "Registry"] }],
   // New WebSocket connections per client IP per minute (per Cloudflare location). Protects the
   // free plan's daily Durable Object quota from connect/close floods.
-  "ratelimits": [{ "name": "CONNECT_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } }],
+  // Generous enough for a classroom or office sharing one public IP.
+  "ratelimits": [{ "name": "CONNECT_LIMITER", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } }],
   // Demo limits (0 = unlimited). Tuned to stay well inside the Workers Free plan.
   "vars": {
     "MAX_DOC_CHARS": "100000",

@@ -164,22 +164,43 @@ provider.messageHandlers[MESSAGE_STATUS] = (_encoder, decoder) => {
 
 const status = $('status')
 const editorElement = $('editor')
-const STATUS_TEXT: Record<string, string> = {
-  connecting: 'Connecting…',
-  connected: 'Connected',
-  disconnected: 'Offline',
+let connectionState = 'connecting'
+let slow = false
+/** When the server asked us to back off: when to retry, and how long the last wait was. */
+let retryAt = 0
+let retryDelay = 0
+let retryTimer = 0
+let roomGone = false
+
+// One place decides the status text, so later events can't overwrite a more useful message.
+function renderStatus(): void {
+  status.dataset.state = roomGone ? 'disconnected' : connectionState
+  if (roomGone) {
+    status.textContent = 'Not connected'
+  } else if (retryAt > 0) {
+    const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))
+    status.textContent = `Server busy — retrying in ${seconds}s`
+  } else if (connectionState === 'connected') {
+    status.textContent = 'Connected'
+  } else if (connectionState === 'disconnected') {
+    status.textContent = provider.synced ? 'Offline' : "Can't reach the server — retrying…"
+  } else {
+    status.textContent = slow ? 'Still connecting… check your network' : 'Connecting…'
+  }
 }
 
 provider.on('status', ({ status: state }: { status: string }) => {
+  connectionState = state
   online = state === 'connected'
-  status.dataset.state = state
-  status.textContent = STATUS_TEXT[state] ?? state
+  if (online) retryDelay = 0
+  renderStatus()
   updateAccess()
 })
 
 // Show a skeleton until the document has arrived, and explain slow connections.
 const slowTimer = window.setTimeout(() => {
-  if (!provider.synced) status.textContent = 'Still connecting… check your network'
+  slow = true
+  renderStatus()
 }, 4000)
 
 provider.once('sync', () => {
@@ -193,12 +214,32 @@ provider.once('sync', () => {
   if (!readOnly) editor.view.focus()
 })
 
+/**
+ * The server refused the connection because of a rate limit. y-websocket gives up on 44xx
+ * codes, so wait (longer each time, up to two minutes) and then reconnect ourselves.
+ */
+function retryLater(): void {
+  retryDelay = Math.min(retryDelay ? retryDelay * 2 : 15_000, 120_000)
+  retryAt = Date.now() + retryDelay
+  announce(`The server is busy. Retrying in ${Math.round(retryDelay / 1000)} seconds.`)
+  window.clearInterval(retryTimer)
+  retryTimer = window.setInterval(() => {
+    if (Date.now() < retryAt) {
+      renderStatus()
+      return
+    }
+    window.clearInterval(retryTimer)
+    retryAt = 0
+    connectionState = 'connecting'
+    renderStatus()
+    provider.connect()
+  }, 1000)
+  renderStatus()
+}
+
 provider.on('connection-close', (event: CloseEvent | null) => {
   if (event?.code === CLOSE_NOT_FOUND) showGone(event.reason === 'Room deleted')
-  else if (event?.code === CLOSE_RATE_LIMITED) {
-    status.textContent = 'Too many connections — try again later'
-    notify('The server is limiting connections. Try again in a little while.')
-  }
+  else if (event?.code === CLOSE_RATE_LIMITED) retryLater()
 })
 
 function showGone(deleted: boolean): void {
@@ -210,8 +251,9 @@ function showGone(deleted: boolean): void {
   $('gone-text').textContent = deleted
     ? 'Its code was removed for everyone and its links no longer work.'
     : 'It may have been deleted, or the link is mistyped.'
-  status.dataset.state = 'disconnected'
-  status.textContent = 'Not connected'
+  roomGone = true
+  window.clearInterval(retryTimer)
+  renderStatus()
   banner.hidden = true
   $<HTMLAnchorElement>('gone-new').focus()
 }

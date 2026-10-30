@@ -63,7 +63,7 @@ Limits are Worker variables in [`cloudflare/wrangler.jsonc`](../cloudflare/wrang
 | `MAX_NEW_ROOMS_PER_HOUR` | `30` per IP |
 | `ROOM_TTL_DAYS` | `7` |
 
-New WebSocket connections are also limited to 60 per minute per client IP with the Workers Rate Limiting binding (`ratelimits` in `wrangler.jsonc`), so a connect/close loop can't use up the free plan's daily quota.
+New WebSocket connections are also limited to 120 per minute per client IP (enough for a classroom or office behind one IP; refused visitors see "Server busy" and retry automatically) with the Workers Rate Limiting binding (`ratelimits` in `wrangler.jsonc`), so a connect/close loop can't use up the free plan's daily quota.
 
 Keep `MAX_DOC_CHARS` and `ROOM_TTL_DAYS` in `admin.wrangler.jsonc` in sync with the editor's values, so the admin page shows the right numbers.
 

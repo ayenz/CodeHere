@@ -84,6 +84,8 @@ export class Room extends DurableObject<Env> {
   private firstDirtyAt = 0
   private dirty = false
   private lastRegistryUpdate = 0
+  private lastOnlineReport = 0
+  private lastReportedOnline = 0
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -434,9 +436,18 @@ export class Room extends DurableObject<Env> {
     if (this.meta) this.sql.exec('INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', 'meta', JSON.stringify(this.meta))
   }
 
+  /**
+   * Keeps the admin page's online count roughly current. Every write counts against the free
+   * plan's daily budget, so it is written when a room becomes active or empty, and otherwise at
+   * most every REGISTRY_UPDATE_MS (each join or leave would make connection floods expensive).
+   */
   private async reportOnline(closing?: WebSocket): Promise<void> {
     if (!this.meta) return
     const online = this.ctx.getWebSockets().filter((ws) => ws !== closing).length
+    const changedActivity = (online === 0) !== (this.lastReportedOnline === 0)
+    if (!changedActivity && Date.now() - this.lastOnlineReport < REGISTRY_UPDATE_MS) return
+    this.lastOnlineReport = Date.now()
+    this.lastReportedOnline = online
     await registry(this.env).update(this.meta.id, { online })
   }
 
