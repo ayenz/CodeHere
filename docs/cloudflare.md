@@ -46,9 +46,10 @@ In `admin.wrangler.jsonc`, change `PUBLIC_URL` to your editor's URL: `https://co
 npx wrangler deploy -c wrangler.jsonc
 npx wrangler deploy -c admin.wrangler.jsonc
 npx wrangler secret put ADMIN_PASSWORD -c admin.wrangler.jsonc   # enter a long random password
+openssl rand -base64 48 | npx wrangler secret put SESSION_SECRET -c admin.wrangler.jsonc
 ```
 
-Wrangler prints both URLs. Without `ADMIN_PASSWORD` the admin page stays disabled.
+Wrangler prints both URLs. Without both `ADMIN_PASSWORD` and `SESSION_SECRET` (at least 32 characters) the admin page stays disabled. `SESSION_SECRET` signs admin sessions; it is separate from the password so that a leaked cookie reveals nothing about the password.
 
 ### Settings
 
@@ -61,6 +62,8 @@ Limits are Worker variables in [`cloudflare/wrangler.jsonc`](../cloudflare/wrang
 | `MAX_CONNECTIONS_PER_ROOM` | `50` |
 | `MAX_NEW_ROOMS_PER_HOUR` | `30` per IP |
 | `ROOM_TTL_DAYS` | `7` |
+
+New WebSocket connections are also limited to 60 per minute per client IP with the Workers Rate Limiting binding (`ratelimits` in `wrangler.jsonc`), so a connect/close loop can't use up the free plan's daily quota.
 
 Keep `MAX_DOC_CHARS` and `ROOM_TTL_DAYS` in `admin.wrangler.jsonc` in sync with the editor's values, so the admin page shows the right numbers.
 
@@ -81,7 +84,7 @@ Put [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policie
 | `CLOUDFLARE_API_TOKEN` | API token from the **Edit Cloudflare Workers** template |
 | `CLOUDFLARE_ACCOUNT_ID` | Your account ID (`npx wrangler whoami`) |
 
-Secrets such as `ADMIN_PASSWORD` are set once with `wrangler secret put` and kept across deploys.
+Secrets such as `ADMIN_PASSWORD` and `SESSION_SECRET` are set once with `wrangler secret put` and kept across deploys.
 
 ## Develop and test locally
 
@@ -92,7 +95,7 @@ npm run dev:admin -w cloudflare    # admin on http://127.0.0.1:8788 (in a second
 npm run test:e2e:cloudflare        # the full end-to-end suite against both Workers
 ```
 
-For the local admin page, put `ADMIN_PASSWORD=…` in `cloudflare/.dev.vars` (git-ignored).
+For the local admin page, put `ADMIN_PASSWORD=…` and `SESSION_SECRET=…` (32+ characters) in `cloudflare/.dev.vars` (git-ignored).
 
 ## Free plan budget
 

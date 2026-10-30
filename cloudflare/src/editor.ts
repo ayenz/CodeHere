@@ -1,6 +1,7 @@
 // The editor Worker: serves the client and routes WebSockets to one Durable Object per room.
 // Mirrors server/src/app.ts.
-import { clientIp, intVar, isRoomId, isStaticAsset, isViewId, json, registry, roomStub, type Env } from './shared'
+import { safeDecode } from './protocol'
+import { clientIp, intVar, isRoomId, isStaticAsset, isViewId, json, registry, roomStub, withSecurityHeaders, type Env } from './shared'
 
 export { Registry } from './registry'
 export { Room } from './room'
@@ -8,16 +9,19 @@ export { Room } from './room'
 async function connect(request: Request, env: Env, pathname: string): Promise<Response> {
   const view = /^\/ws\/v\/([^/]+)$/.exec(pathname)
   const edit = view ? null : /^\/ws\/([^/]+)$/.exec(pathname)
+  if (env.CONNECT_LIMITER && !(await env.CONNECT_LIMITER.limit({ key: clientIp(request) })).success) {
+    return closedSocket(4429, 'Too many connections')
+  }
   let roomId: string | null = null
   if (view) {
-    const viewId = decodeURIComponent(view[1])
-    if (!isViewId(viewId)) return new Response('Bad Request', { status: 400 })
+    const viewId = safeDecode(view[1])
+    if (!viewId || !isViewId(viewId)) return new Response('Bad Request', { status: 400 })
     roomId = await registry(env).roomIdForView(viewId)
     // The client still needs an open socket to learn why: the room answers with 4404.
     if (!roomId) return closedSocket(4404, 'Room not found')
   } else if (edit) {
-    roomId = decodeURIComponent(edit[1])
-    if (!isRoomId(roomId)) return new Response('Bad Request', { status: 400 })
+    roomId = safeDecode(edit[1])
+    if (!roomId || !isRoomId(roomId)) return new Response('Bad Request', { status: 400 })
   } else {
     return new Response('Bad Request', { status: 400 })
   }
@@ -54,14 +58,14 @@ export default {
     if (pathname === '/healthz') return new Response('ok')
     if (pathname === '/api/config') return json({ maxDocChars: intVar(env.MAX_DOC_CHARS) })
     const ownerDelete = /^\/api\/rooms\/([^/]+)$/.exec(pathname)
-    if (ownerDelete && request.method === 'DELETE') return deleteAsOwner(request, env, decodeURIComponent(ownerDelete[1]))
+    if (ownerDelete && request.method === 'DELETE') return deleteAsOwner(request, env, safeDecode(ownerDelete[1]) ?? '')
     if (pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404)
     if (pathname.startsWith('/ws/')) {
       if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected a WebSocket', { status: 426 })
       return connect(request, env, pathname)
     }
-    if (isStaticAsset(pathname)) return env.ASSETS.fetch(request)
+    if (isStaticAsset(pathname)) return withSecurityHeaders(await env.ASSETS.fetch(request))
     // Every other path is a room, so it gets the editor page (the admin page has its own Worker).
-    return env.ASSETS.fetch(new Request(new URL('/', url), request))
+    return withSecurityHeaders(await env.ASSETS.fetch(new Request(new URL('/', url), request)))
   },
 } satisfies ExportedHandler<Env>

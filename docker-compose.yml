@@ -18,8 +18,9 @@ services:
       PORT: 3000
       SQLITE_PATH: /data/codehere.db
     ports:
-      # Set PUBLISH=127.0.0.1:3000 when a reverse proxy runs on the same machine.
-      - "${PUBLISH:-3000}:3000"
+      # Only reachable from this machine by default. Set PUBLISH=3000 to expose it directly
+      # (without a reverse proxy, and then keep TRUST_PROXY=false).
+      - "${PUBLISH:-127.0.0.1:3000}:3000"
     volumes:
       - app-data:/data
     restart: unless-stopped

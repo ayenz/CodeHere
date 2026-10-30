@@ -5,6 +5,8 @@ export interface Env {
   ROOMS: DurableObjectNamespace<Room>
   REGISTRY: DurableObjectNamespace<Registry>
   ASSETS: Fetcher
+  /** Editor Worker only; optional so the admin Worker and tests can run without it. */
+  CONNECT_LIMITER?: RateLimit
   MAX_DOC_CHARS?: string
   MAX_MESSAGE_BYTES?: string
   MAX_CONNECTIONS_PER_ROOM?: string
@@ -12,6 +14,8 @@ export interface Env {
   ROOM_TTL_DAYS?: string
   // Admin Worker only.
   ADMIN_PASSWORD?: string
+  /** Random key for signing admin sessions (wrangler secret put SESSION_SECRET). */
+  SESSION_SECRET?: string
   PUBLIC_URL?: string
 }
 
@@ -45,7 +49,7 @@ export async function sha256Hex(text: string): Promise<string> {
 
 /** Built files served as-is; every other path is a page. */
 export function isStaticAsset(pathname: string): boolean {
-  return pathname.startsWith('/assets/') || pathname === '/favicon.svg'
+  return pathname.startsWith('/assets/') || pathname === '/favicon.svg' || pathname === '/theme.js'
 }
 
 export function clientIp(request: Request): string {
@@ -53,10 +57,43 @@ export function clientIp(request: Request): string {
 }
 
 export function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
-  })
+  return withSecurityHeaders(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    }),
+  )
+}
+
+/**
+ * Same policy as server/src/app.ts. CodeMirror injects <style> elements and remote cursors use
+ * inline styles, so styles need 'unsafe-inline'; scripts are strictly same-origin.
+ */
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ')
+
+export function withSecurityHeaders(response: Response): Response {
+  // WebSocket upgrades must be returned untouched.
+  if (response.status === 101) return response
+  const secured = new Response(response.body, response)
+  secured.headers.set('Content-Security-Policy', CONTENT_SECURITY_POLICY)
+  secured.headers.set('X-Content-Type-Options', 'nosniff')
+  secured.headers.set('X-Frame-Options', 'DENY')
+  secured.headers.set('Referrer-Policy', 'same-origin')
+  secured.headers.set('Cross-Origin-Opener-Policy', 'same-origin')
+  secured.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+  secured.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  return secured
 }
 
 export function roomStub(env: Env, id: string): DurableObjectStub<Room> {

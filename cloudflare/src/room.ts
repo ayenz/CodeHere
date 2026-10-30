@@ -4,6 +4,7 @@ import * as encoding from 'lib0/encoding'
 import * as awarenessProtocol from 'y-protocols/awareness'
 import * as syncProtocol from 'y-protocols/sync'
 import * as Y from 'yjs'
+import { hasPendingUpdates, isAllowedUpdate, sanitizeAwarenessUpdate } from './protocol'
 import { intVar, randomId, registry, sha256Hex, type Env } from './shared'
 
 // Same wire protocol as server/src/rooms.ts, so the client works unchanged.
@@ -87,7 +88,7 @@ export class Room extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.sql = ctx.storage.sql
-    this.sql.exec('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value BLOB)')
+    this.createSchema()
 
     const rows = this.sql.exec<{ key: string; value: ArrayBuffer | string }>('SELECT key, value FROM kv').toArray()
     for (const row of rows) {
@@ -255,14 +256,28 @@ export class Room extends DurableObject<Env> {
         // Already closing.
       }
     }
+    // Empty the in-memory document too; otherwise reconnecting before the object is evicted
+    // would bring the deleted code back.
+    this.doc.transact(() => {
+      this.text.delete(0, this.text.length)
+      const settings = this.doc.getMap('meta')
+      for (const key of [...settings.keys()]) settings.delete(key)
+    }, 'reset')
+    awarenessProtocol.removeAwarenessStates(this.awareness, [...this.awareness.getStates().keys()], 'reset')
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = null
     this.dirty = false
     this.meta = null
     await this.ctx.storage.deleteAlarm()
     await this.ctx.storage.deleteAll()
+    // deleteAll() drops the tables too; the same ID may be used for a new room right away.
+    this.createSchema()
     await registry(this.env).remove(id)
     return true
+  }
+
+  private createSchema(): void {
+    this.sql.exec('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value BLOB)')
   }
 
   // --- Expiry --------------------------------------------------------------------
@@ -325,15 +340,39 @@ export class Room extends DurableObject<Env> {
     const decoder = decoding.createDecoder(data)
     const type = decoding.readVarUint(decoder)
     if (type === MESSAGE_SYNC) {
-      // Read-only connections may ask for the document (step 1) but never change it.
-      const canEdit = !attachment.viewer && !this.meta?.locked
-      if (!canEdit && decoding.peekVarUint(decoder) !== syncProtocol.messageYjsSyncStep1) return
-      const encoder = encoding.createEncoder()
-      encoding.writeVarUint(encoder, MESSAGE_SYNC)
-      syncProtocol.readSyncMessage(decoder, encoder, this.doc, ws)
-      if (encoding.length(encoder) > 1) send(ws, encoding.toUint8Array(encoder))
+      const syncType = decoding.readVarUint(decoder)
+      if (syncType === syncProtocol.messageYjsSyncStep1) {
+        const encoder = encoding.createEncoder()
+        encoding.writeVarUint(encoder, MESSAGE_SYNC)
+        syncProtocol.readSyncStep1(decoder, encoder, this.doc)
+        send(ws, encoding.toUint8Array(encoder))
+        return
+      }
+      // Read-only connections may ask for the document (step 1 above) but never change it.
+      if (attachment.viewer || this.meta?.locked) return
+      if (syncType !== syncProtocol.messageYjsSyncStep2 && syncType !== syncProtocol.messageYjsUpdate) return
+      const update = decoding.readVarUint8Array(decoder)
+      if (!isAllowedUpdate(update)) {
+        ws.close(1008, 'Invalid update')
+        return
+      }
+      Y.applyUpdate(this.doc, update, ws)
+      // Updates that cannot be integrated would be stored and resent forever; drop them.
+      if (hasPendingUpdates(this.doc)) {
+        this.doc.store.pendingStructs = null
+        this.doc.store.pendingDs = null
+        ws.close(1008, 'Invalid update')
+      }
     } else if (type === MESSAGE_AWARENESS) {
-      awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(decoder), ws)
+      const update = sanitizeAwarenessUpdate(decoding.readVarUint8Array(decoder), {
+        viewer: attachment.viewer,
+        owned: new Set(Object.keys(attachment.clients).map(Number)),
+        ownedByOthers: (clientId) =>
+          this.ctx
+            .getWebSockets()
+            .some((other) => other !== ws && String(clientId) in ((other.deserializeAttachment() as Attachment | null)?.clients ?? {})),
+      })
+      if (update) awarenessProtocol.applyAwarenessUpdate(this.awareness, update, ws)
     }
   }
 

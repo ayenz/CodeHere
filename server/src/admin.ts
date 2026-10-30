@@ -72,6 +72,8 @@ function cookieValue(req: IncomingMessage, name: string): string | null {
 export function createAdminHandler(ctx: AdminContext) {
   const sessions = new Map<string, number>()
   const loginAttempts = new WindowCounter(5, 60 * 1000)
+  // A ceiling across all IPs, for attackers who rotate addresses.
+  const allLoginAttempts = new WindowCounter(30, 60 * 1000)
   const passwordDigest = digest(ctx.config.adminPassword)
 
   function isSecure(req: IncomingMessage): boolean {
@@ -115,7 +117,8 @@ export function createAdminHandler(ctx: AdminContext) {
     const route = pathname.slice('/api/admin'.length)
 
     if (route === '/login' && method === 'POST') {
-      if (!loginAttempts.hit(ctx.clientIp(req))) {
+      loginAttempts.prune()
+      if (!allLoginAttempts.hit('all') || !loginAttempts.hit(ctx.clientIp(req))) {
         json(res, 429, { error: 'Too many attempts' })
         return true
       }

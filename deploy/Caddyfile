@@ -2,11 +2,13 @@
 # automatically for DOMAIN and ADMIN_HOST (both must point at this server in DNS).
 {$DOMAIN} {
 	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy app:3000
 }
 
 # The admin page. Remove this block if you don't use ADMIN_HOST.
 {$ADMIN_HOST} {
 	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy app:3000
 }

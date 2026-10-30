@@ -20,6 +20,7 @@ Open a room, share the link, and write code together. No sign-up, no tracking.
 - [Admin page](#admin-page)
 - [How it works](#how-it-works)
 - [Development](#development)
+- [Security](#security)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -217,6 +218,10 @@ To run the server tests against PostgreSQL:
 docker run -d --name codehere-pg -e POSTGRES_USER=codehere -e POSTGRES_PASSWORD=codehere -e POSTGRES_DB=codehere -p 5432:5432 postgres:17-alpine
 DB_DRIVER=postgres DATABASE_URL=postgres://codehere:codehere@localhost:5432/codehere npm test
 ```
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the security model, what the server enforces, and how to report a vulnerability privately.
 
 ## Contributing
 

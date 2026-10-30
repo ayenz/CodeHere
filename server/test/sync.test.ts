@@ -21,7 +21,7 @@ describe('sync', () => {
     a.text.insert(0, '> ')
     await until(() => a.text.toString() === b.text.toString() && a.text.length === 13, 'edits converge')
 
-    a.provider.awareness.setLocalStateField('user', { name: 'A' })
+    a.provider.awareness.setLocalStateField('user', { name: 'A', color: '#f59e0b' })
     await until(
       () => b.provider.awareness.getStates().get(a.doc.clientID)?.user?.name === 'A',
       'awareness reaches B',

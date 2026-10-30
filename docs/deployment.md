@@ -179,7 +179,7 @@ ROOM_TTL_DAYS=90              # delete rooms nobody edited for 90 days
 
 Also:
 
-- Keep `TRUST_PROXY=true` **only** when CodeHere is reachable solely through your proxy (`PUBLISH=127.0.0.1:3000` or `HOST=127.0.0.1`). Otherwise clients could fake their IP and dodge per-IP limits.
+- Keep `TRUST_PROXY=true` **only** when CodeHere is reachable solely through your proxy (`PUBLISH=127.0.0.1:3000`, the default, or `HOST=127.0.0.1`). Otherwise clients could fake their IP and dodge per-IP limits. CodeHere uses the right-most `X-Forwarded-For` entry, the one your proxy adds; the nginx example sets it to the real client address.
 - Use a long, random `ADMIN_PASSWORD`. Sign-in attempts are limited to 5 per minute per IP. The session cookie is `HttpOnly`, `SameSite=Strict` and `Secure` over HTTPS.
 - Anyone with a room's edit link can edit it — share view-only links when people only need to read.
 

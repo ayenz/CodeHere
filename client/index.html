@@ -9,16 +9,7 @@
     <title>CodeHere</title>
     <!-- Loaded in <head> so the page never renders without styles. -->
     <link rel="stylesheet" href="/src/style.css" />
-    <script>
-      // Apply the saved theme before first paint to avoid a flash.
-      try {
-        const saved = localStorage.getItem('codehere:theme')
-        document.documentElement.dataset.theme =
-          saved === 'light' || saved === 'dark'
-            ? saved
-            : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      } catch {}
-    </script>
+    <script src="/theme.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#editor">Skip to editor</a>

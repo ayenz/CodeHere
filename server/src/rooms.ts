@@ -8,6 +8,7 @@ import * as Y from 'yjs'
 import type { Limits } from './config.js'
 import type { RoomStore } from './db.js'
 import { TokenBucket, WindowCounter } from './limits.js'
+import { hasPendingUpdates, isAllowedUpdate, sanitizeAwarenessUpdate } from './protocol.js'
 
 // Message types of the y-websocket protocol, which the client's WebsocketProvider speaks.
 const MESSAGE_SYNC = 0
@@ -17,6 +18,9 @@ export const MESSAGE_STATUS = 100
 
 // Flush at least this often while a room is being edited continuously.
 const MAX_PERSIST_WAIT_MS = 10_000
+
+// Messages a connection may send before its room has finished loading.
+const MAX_QUEUED_MESSAGES = 200
 
 // Close codes in 4400-4499 tell y-websocket clients not to reconnect.
 export const CLOSE_NOT_FOUND = 4404
@@ -158,16 +162,36 @@ class Room {
     const decoder = decoding.createDecoder(data)
     const type = decoding.readVarUint(decoder)
     if (type === MESSAGE_SYNC) {
-      // Read-only connections may ask for the document (step 1) but never change it.
-      const canEdit = !state.viewer && !this.locked
-      if (!canEdit && decoding.peekVarUint(decoder) !== syncProtocol.messageYjsSyncStep1) return
-      const encoder = encoding.createEncoder()
-      encoding.writeVarUint(encoder, MESSAGE_SYNC)
-      syncProtocol.readSyncMessage(decoder, encoder, this.doc, conn)
-      // Only reply when the sync message produced a response (step 1 → step 2).
-      if (encoding.length(encoder) > 1) send(conn, encoding.toUint8Array(encoder))
+      const syncType = decoding.readVarUint(decoder)
+      if (syncType === syncProtocol.messageYjsSyncStep1) {
+        const encoder = encoding.createEncoder()
+        encoding.writeVarUint(encoder, MESSAGE_SYNC)
+        syncProtocol.readSyncStep1(decoder, encoder, this.doc)
+        send(conn, encoding.toUint8Array(encoder))
+        return
+      }
+      // Read-only connections may ask for the document (step 1 above) but never change it.
+      if (state.viewer || this.locked) return
+      if (syncType !== syncProtocol.messageYjsSyncStep2 && syncType !== syncProtocol.messageYjsUpdate) return
+      const update = decoding.readVarUint8Array(decoder)
+      if (!isAllowedUpdate(update)) {
+        conn.close(1008, 'Invalid update')
+        return
+      }
+      Y.applyUpdate(this.doc, update, conn)
+      // Updates that cannot be integrated would be stored and resent forever; drop them.
+      if (hasPendingUpdates(this.doc)) {
+        this.doc.store.pendingStructs = null
+        this.doc.store.pendingDs = null
+        conn.close(1008, 'Invalid update')
+      }
     } else if (type === MESSAGE_AWARENESS) {
-      awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(decoder), conn)
+      const update = sanitizeAwarenessUpdate(decoding.readVarUint8Array(decoder), {
+        viewer: state.viewer,
+        owned: state.clientIds,
+        ownedByOthers: (clientId) => [...this.conns].some(([other, s]) => other !== conn && s.clientIds.has(clientId)),
+      })
+      if (update) awarenessProtocol.applyAwarenessUpdate(this.awareness, update, conn)
     }
   }
 
@@ -325,6 +349,10 @@ export class RoomManager {
       }
       const message = toUint8Array(data)
       if (!room) {
+        if (queue.length >= MAX_QUEUED_MESSAGES) {
+          conn.close(CLOSE_RATE_LIMITED, 'Too many messages')
+          return
+        }
         queue.push(message)
         return
       }
@@ -434,9 +462,11 @@ export class RoomManager {
     if (active) {
       active.deleted = true
       active.closeAll(CLOSE_NOT_FOUND, 'Room deleted')
-      this.unload(active)
     }
+    // Keep the deleted room in memory until the row is gone, so that anyone connecting in
+    // the meantime is refused instead of loading the old row again.
     const stored = await this.store.delete(id)
+    if (active) this.unload(active)
     return Boolean(active) || stored
   }
 

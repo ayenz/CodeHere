@@ -1,6 +1,7 @@
 // The admin Worker: the same admin page and API as server/src/admin.ts, on its own host.
 // Sessions are signed cookies because Workers keep no memory between requests.
-import { clientIp, intVar, isRoomId, isStaticAsset, json, registry, roomStub, type Env } from './shared'
+import { safeDecode } from './protocol'
+import { clientIp, intVar, isRoomId, isStaticAsset, json, registry, roomStub, withSecurityHeaders, type Env } from './shared'
 
 const COOKIE = 'codehere_admin'
 const SESSION_MS = 12 * 60 * 60 * 1000
@@ -12,10 +13,12 @@ function base64url(bytes: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-async function hmacKey(password: string): Promise<CryptoKey> {
-  // Derived from the password, so changing it signs everyone out.
-  const secret = await crypto.subtle.digest('SHA-256', encoder.encode(`codehere-admin-session:${password}`))
-  return crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+/**
+ * Sessions are signed with a separate random secret rather than anything derived from the
+ * password, so a leaked cookie can't be used to guess the password offline.
+ */
+async function hmacKey(sessionSecret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', encoder.encode(sessionSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
 }
 
 async function sign(key: CryptoKey, value: string): Promise<string> {
@@ -48,16 +51,21 @@ async function authenticated(request: Request, key: CryptoKey): Promise<boolean>
 
 async function handleApi(request: Request, env: Env, route: string): Promise<Response> {
   const password = env.ADMIN_PASSWORD ?? ''
-  if (!password) return json({ error: 'Admin is disabled' }, 404)
+  const sessionSecret = env.SESSION_SECRET ?? ''
+  // Both secrets are required; a short session secret would be guessable.
+  if (!password || sessionSecret.length < 32) return json({ error: 'Admin is disabled' }, 404)
   const method = request.method
   // Cookies are SameSite=Strict; this header additionally blocks cross-site form posts.
   if (method !== 'GET' && request.headers.get('x-requested-with') !== 'codehere') {
     return json({ error: 'Missing X-Requested-With header' }, 403)
   }
-  const key = await hmacKey(password)
+  const key = await hmacKey(sessionSecret)
 
   if (route === '/login' && method === 'POST') {
-    if (!(await registry(env).hit(`login:${clientIp(request)}`, 5, 60 * 1000))) return json({ error: 'Too many attempts' }, 429)
+    const limits = registry(env)
+    // Per IP, plus a ceiling across all IPs for attackers who rotate addresses.
+    const allowed = (await limits.hit('login:all', 30, 60 * 1000)) && (await limits.hit(`login:${clientIp(request)}`, 5, 60 * 1000))
+    if (!allowed) return json({ error: 'Too many attempts' }, 429)
     const body = (await request.json().catch(() => null)) as { password?: unknown } | null
     const given = typeof body?.password === 'string' ? body.password : ''
     // Compare signatures rather than the raw strings so the comparison is fixed-length.
@@ -100,7 +108,7 @@ async function handleApi(request: Request, env: Env, route: string): Promise<Res
   }
 
   const match = /^\/rooms\/([^/]+)(\/lock)?$/.exec(route)
-  const id = match ? decodeURIComponent(match[1]) : ''
+  const id = match ? (safeDecode(match[1]) ?? '') : ''
   // Only rooms the registry knows about: looking up any other ID would create an empty object.
   if (!match || !isRoomId(id) || !(await registry(env).get(id))) return json({ error: 'Room not found' }, 404)
   const room = roomStub(env, id)
@@ -128,8 +136,8 @@ export default {
     if (url.pathname === '/healthz') return new Response('ok')
     if (url.pathname.startsWith('/api/admin/')) return handleApi(request, env, url.pathname.slice('/api/admin'.length))
     if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws/')) return json({ error: 'Not found' }, 404)
-    if (isStaticAsset(url.pathname)) return env.ASSETS.fetch(request)
+    if (isStaticAsset(url.pathname)) return withSecurityHeaders(await env.ASSETS.fetch(request))
     // Every page on this host is the admin page ("/admin" is admin.html in the assets).
-    return env.ASSETS.fetch(new Request(new URL('/admin', url), request))
+    return withSecurityHeaders(await env.ASSETS.fetch(new Request(new URL('/admin', url), request)))
   },
 } satisfies ExportedHandler<Env>

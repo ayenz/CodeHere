@@ -155,6 +155,44 @@ test('the creator can delete a room and everyone sees it is gone', async ({ page
   await expect(page.locator('#gone-title')).toHaveText('This room was deleted')
   await expect(other.locator('#gone-title')).toHaveText('This room was deleted')
   await other.close()
+
+  // Opening the same URL again starts a fresh, empty room: the deleted code never comes back,
+  // and the new room works and is saved like any other.
+  await page.goto(path)
+  await expect(page.locator('#editor')).not.toHaveAttribute('data-loading')
+  await expect(page.locator('.cm-content')).not.toContainText('bye')
+  await typeCode(page, 'hello again')
+  await page.waitForTimeout(2500)
+  await page.reload()
+  await expect(page.locator('.cm-content')).toContainText('hello again')
+})
+
+test('the strict Content-Security-Policy blocks nothing the app needs', async ({ page, browser }) => {
+  const violations: string[] = []
+  const watch = (target: Page) =>
+    target.on('console', (message) => {
+      if (/Content Security Policy|Content-Security-Policy/i.test(message.text())) violations.push(message.text())
+    })
+  watch(page)
+  const path = await openNewRoom(page)
+  const response = await page.request.get(path)
+  expect(response.headers()['content-security-policy']).toContain("script-src 'self'")
+
+  // Exercise the lazily loaded parts: language detection, Prettier, a theme, Vim, presence.
+  await typeCode(page, 'const greet=(name)=>{return `Hello ${name}`}\nconsole.log(greet("x"))\n')
+  await expect(page.locator('#language option:checked')).toHaveText('Auto · JavaScript')
+  await page.locator('#format').click()
+  await expect(page.locator('.cm-content')).toContainText('const greet = (name) => {')
+  await page.locator('#editor-theme').selectOption('dracula')
+  await page.locator('#settings-button').click()
+  await page.locator('#setting-keymap').selectOption('vim')
+  const other = await browser.newPage()
+  watch(other)
+  await other.goto(path)
+  await expect(page.locator('#people .avatar')).toHaveCount(1)
+  await page.waitForTimeout(500)
+  await other.close()
+  expect(violations).toEqual([])
 })
 
 test('a missing view link shows a friendly page', async ({ page }) => {

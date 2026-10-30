@@ -12,6 +12,12 @@ const ADMIN_PORT = cloudflare ? 8788 : PORT
 export const ADMIN_URL = cloudflare ? `http://localhost:${ADMIN_PORT}` : `http://admin.localhost:${PORT}`
 
 const dataDir = mkdtempSync(join(tmpdir(), 'codehere-e2e-'))
+// A private wrangler dev registry: the admin Worker finds the editor's Durable Objects through
+// it, and stale entries left by earlier (killed) sessions would otherwise break that lookup.
+const wranglerEnv = { WRANGLER_REGISTRY_PATH: join(dataDir, 'wrangler-registry') }
+// Fresh Durable Object storage per run, like the fresh SQLite file for the Node target; otherwise
+// rate-limit counters (e.g. failed admin sign-ins) carry over from earlier runs.
+const persist = `--persist-to ${join(dataDir, 'wrangler-state')}`
 
 export default defineConfig({
   testDir: '.',
@@ -30,19 +36,23 @@ export default defineConfig({
   webServer: cloudflare
     ? [
         {
-          command: 'npx wrangler dev -c wrangler.jsonc --port 8787 --ip 127.0.0.1 --var MAX_DOC_CHARS:5000 --var MAX_NEW_ROOMS_PER_HOUR:0',
+          command: `npx wrangler dev -c wrangler.jsonc --port 8787 --ip 127.0.0.1 ${persist} --var MAX_DOC_CHARS:5000 --var MAX_NEW_ROOMS_PER_HOUR:0`,
           cwd: '../cloudflare',
           url: 'http://127.0.0.1:8787/healthz',
-          reuseExistingServer: !process.env.CI,
+          reuseExistingServer: false,
           timeout: 120_000,
+          env: wranglerEnv,
         },
         {
+          // The admin Worker binds to the editor's Durable Objects, so it must start second.
           command:
-            'npx wrangler dev -c admin.wrangler.jsonc --port 8788 --ip 127.0.0.1 --var ADMIN_PASSWORD:e2e-admin --var PUBLIC_URL:http://localhost:8787 --var MAX_DOC_CHARS:5000',
+            `until curl -sf http://127.0.0.1:8787/healthz > /dev/null; do sleep 1; done; npx wrangler dev -c admin.wrangler.jsonc --port 8788 --ip 127.0.0.1 ${persist} ` +
+            '--var ADMIN_PASSWORD:e2e-admin --var SESSION_SECRET:e2e-session-secret-0123456789abcdef --var PUBLIC_URL:http://localhost:8787 --var MAX_DOC_CHARS:5000',
           cwd: '../cloudflare',
           url: 'http://127.0.0.1:8788/healthz',
-          reuseExistingServer: !process.env.CI,
+          reuseExistingServer: false,
           timeout: 120_000,
+          env: wranglerEnv,
         },
       ]
     : {

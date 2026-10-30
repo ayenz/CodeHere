@@ -7,9 +7,13 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { createAdminHandler } from './admin.js'
 import { hostname, type Config } from './config.js'
 import { openRoomStore, type RoomStore } from './db.js'
+import { safeDecode } from './protocol.js'
 import { isRoomId, RoomManager, type Access } from './rooms.js'
 
 const HEARTBEAT_MS = 30_000
+// Used when MAX_MESSAGE_BYTES is 0: ws treats an explicit 0 as "no limit at all", which would
+// let one client exhaust memory with a single huge frame. This matches ws's own default.
+const DEFAULT_MAX_MESSAGE_BYTES = 100 * 1024 * 1024
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000
 
 export interface App {
@@ -20,23 +24,62 @@ export interface App {
   close(): Promise<void>
 }
 
+/** The request URL, or null when it is malformed (e.g. "//", which new URL() rejects). */
+function parseUrl(req: IncomingMessage): URL | null {
+  try {
+    return new URL(req.url ?? '/', 'http://localhost')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Sent with every response. CodeMirror injects <style> elements and remote cursors use
+ * inline styles, so styles need 'unsafe-inline'; scripts are strictly same-origin.
+ */
+function setSecurityHeaders(req: IncomingMessage, res: ServerResponse): void {
+  const host = req.headers.host ?? ''
+  // 'self' covers WebSockets in current browsers; the explicit ws/wss origins help older ones.
+  const sockets = /^[A-Za-z0-9.:[\]-]+$/.test(host) ? ` ws://${host} wss://${host}` : ''
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "font-src 'self' data:",
+      `connect-src 'self'${sockets}`,
+      "object-src 'none'",
+      "base-uri 'none'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join('; '),
+  )
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('Referrer-Policy', 'same-origin')
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+}
+
 /** Built files that are served as-is on both hosts; every other path is a page. */
 function isStaticAsset(pathname: string): boolean {
-  return pathname.startsWith('/assets/') || pathname === '/favicon.svg'
+  return pathname.startsWith('/assets/') || pathname === '/favicon.svg' || pathname === '/theme.js'
 }
 
 /** Parses /ws/<roomId> (edit) and /ws/v/<viewId> (read-only). */
 function parseAccess(pathname: string, searchParams: URLSearchParams): Access | null {
   const view = /^\/ws\/v\/([^/]+)$/.exec(pathname)
   if (view) {
-    const viewId = decodeURIComponent(view[1])
-    return /^[A-Za-z0-9_-]{4,32}$/.test(viewId) ? { kind: 'view', viewId } : null
+    const viewId = safeDecode(view[1])
+    return viewId && /^[A-Za-z0-9_-]{4,32}$/.test(viewId) ? { kind: 'view', viewId } : null
   }
   const edit = /^\/ws\/([^/]+)$/.exec(pathname)
   if (edit) {
-    const roomId = decodeURIComponent(edit[1])
+    const roomId = safeDecode(edit[1])
     const ownerToken = searchParams.get('owner') ?? undefined
-    return isRoomId(roomId) ? { kind: 'edit', roomId, ownerToken } : null
+    return roomId && isRoomId(roomId) ? { kind: 'edit', roomId, ownerToken } : null
   }
   return null
 }
@@ -48,9 +91,11 @@ export async function createApp(config: Config): Promise<App> {
 
   function clientIp(req: IncomingMessage): string {
     if (config.trustProxy) {
+      // The right-most entry is the one our own proxy appended; anything to its left came
+      // from the client and can be forged.
       const forwarded = req.headers['x-forwarded-for']
-      const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim()
-      if (first) return first
+      const last = (Array.isArray(forwarded) ? forwarded.join(',') : forwarded)?.split(',').pop()?.trim()
+      if (last) return last
     }
     return req.socket.remoteAddress ?? 'unknown'
   }
@@ -98,7 +143,22 @@ export async function createApp(config: Config): Promise<App> {
     : null
 
   const server = createServer((req, res) => {
-    const { pathname } = new URL(req.url ?? '/', 'http://localhost')
+    setSecurityHeaders(req, res)
+    const url = parseUrl(req)
+    if (!url) {
+      res.writeHead(400, { 'content-type': 'text/plain' }).end('Bad Request')
+      return
+    }
+    try {
+      handleRequest(req, res, url.pathname)
+    } catch (error) {
+      console.error('[http] request failed', error)
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' })
+      res.end('Internal error')
+    }
+  })
+
+  function handleRequest(req: IncomingMessage, res: ServerResponse, pathname: string): void {
     if (pathname === '/healthz') {
       res.writeHead(200, { 'content-type': 'text/plain' }).end('ok')
       return
@@ -120,7 +180,7 @@ export async function createApp(config: Config): Promise<App> {
     }
     const ownerDelete = /^\/api\/rooms\/([^/]+)$/.exec(pathname)
     if (ownerDelete && req.method === 'DELETE') {
-      deleteAsOwner(req, decodeURIComponent(ownerDelete[1]))
+      deleteAsOwner(req, safeDecode(ownerDelete[1]) ?? '')
         .then((status) => res.writeHead(status).end())
         .catch((error) => {
           console.error('[api] delete failed', error)
@@ -141,7 +201,7 @@ export async function createApp(config: Config): Promise<App> {
       return
     }
     res.writeHead(404, { 'content-type': 'text/plain' }).end('Client not built. Run `npm run build`.')
-  })
+  }
 
   /** ADMIN_HOST serves only the admin page, its assets and the admin API. */
   function serveAdminHost(req: IncomingMessage, res: ServerResponse, pathname: string): void {
@@ -167,12 +227,15 @@ export async function createApp(config: Config): Promise<App> {
     })
   }
 
-  const wss = new WebSocketServer({ noServer: true, maxPayload: config.limits.maxMessageBytes })
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: config.limits.maxMessageBytes || DEFAULT_MAX_MESSAGE_BYTES,
+  })
   const alive = new WeakSet<WebSocket>()
 
   server.on('upgrade', (req, socket, head) => {
-    const { pathname, searchParams } = new URL(req.url ?? '/', 'http://localhost')
-    const access = isAdminHost(req) ? null : parseAccess(pathname, searchParams)
+    const url = parseUrl(req)
+    const access = !url || isAdminHost(req) ? null : parseAccess(url.pathname, url.searchParams)
     if (!access) {
       socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
       return

@@ -36,12 +36,22 @@ interface RoomStatus {
 const ownerKey = (id: string) => `codehere:owner:${id}`
 const viewMatch = /^\/v\/([^/]+)$/.exec(location.pathname)
 const viewing = Boolean(viewMatch)
-let roomKey = decodeURIComponent(viewMatch ? viewMatch[1] : location.pathname.slice(1))
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return ''
+  }
+}
+
+let roomKey = safeDecode(viewMatch ? viewMatch[1] : location.pathname.slice(1))
+let creatingRoom = false
 if (!ROOM_ID_PATTERN.test(roomKey)) {
   // A brand-new room: remember a secret that proves we created it, so we can delete it later.
   roomKey = newId()
   writeSetting(ownerKey(roomKey), newSecret())
   history.replaceState(null, '', `/${roomKey}`)
+  creatingRoom = true
 }
 const ownerToken = viewing ? null : readSetting(ownerKey(roomKey))
 
@@ -53,10 +63,31 @@ const doc = new Y.Doc()
 const ytext = doc.getText('code')
 const meta = doc.getMap<string>('meta')
 const wsBase = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+// The owner token is only needed to claim a room as it is created, so it is sent on the first
+// connection of a new room and nowhere else (URLs can end up in proxy logs).
 const provider = new WebsocketProvider(viewing ? `${wsBase}/v` : wsBase, roomKey, doc, {
-  params: ownerToken ? { owner: ownerToken } : {},
+  params: creatingRoom && ownerToken ? { owner: ownerToken } : {},
 })
+provider.once('sync', () => delete provider.params.owner)
 const awareness = provider.awareness
+
+// Other people's names and colours end up in this page's CSS (remote cursors). The server
+// already validates them; this guards against older or modified servers. It is registered
+// before the editor so it runs before the cursor rendering sees a state.
+const SAFE_COLOR = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/
+awareness.on('change', ({ added, updated }: { added: number[]; updated: number[] }) => {
+  for (const clientId of [...added, ...updated]) {
+    const state = awareness.getStates().get(clientId) as { user?: Record<string, unknown> } | undefined
+    const user = state?.user
+    if (!user || clientId === doc.clientID) continue
+    const valid =
+      typeof user.name === 'string' &&
+      typeof user.color === 'string' &&
+      SAFE_COLOR.test(user.color) &&
+      (user.colorLight === undefined || (typeof user.colorLight === 'string' && SAFE_COLOR.test(user.colorLight)))
+    if (!valid) delete state.user
+  }
+})
 
 const identity = loadIdentity()
 awareness.setLocalStateField('user', { ...identity, viewer: viewing })
@@ -198,7 +229,8 @@ let detectedLanguage = PLAIN_TEXT
 let appliedLanguage = ''
 
 function chosenLanguage(): string {
-  return meta.get('language') ?? AUTO
+  const value: unknown = meta.get('language')
+  return typeof value === 'string' && (value === AUTO || languageNames.includes(value)) ? value : AUTO
 }
 
 /** The language actually in effect: the explicit choice, or the detected one in auto mode. */

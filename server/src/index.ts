@@ -9,6 +9,12 @@ app.server.listen(config.port, config.host, () => {
   if (config.adminPassword && config.adminHost) console.log(`[server] admin enabled on host ${config.adminHost}`)
   else if (config.adminPassword) console.warn('[server] admin disabled: ADMIN_PASSWORD is set but ADMIN_HOST is not')
   else console.log('[server] admin disabled (set ADMIN_PASSWORD and ADMIN_HOST)')
+  if (config.trustProxy && (config.host === '0.0.0.0' || config.host === '::')) {
+    console.warn(
+      '[server] TRUST_PROXY is on while listening on all interfaces: make sure only your proxy can reach this port, ' +
+        'or clients can fake their IP and host.',
+    )
+  }
 })
 
 let shuttingDown = false
