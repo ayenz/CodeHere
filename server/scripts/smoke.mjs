@@ -11,6 +11,8 @@ const room = `smoke-${Date.now().toString(36)}`
 function client() {
   const doc = new Y.Doc()
   const provider = new WebsocketProvider(url, room, doc, { WebSocketPolyfill: WebSocket })
+  // The server also sends room status messages (MESSAGE_STATUS = 100 in src/rooms.ts); ignore them.
+  provider.messageHandlers[100] = () => {}
   const synced = new Promise((resolve) => provider.once('sync', resolve))
   return { doc, provider, text: doc.getText('code'), synced }
 }

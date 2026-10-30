@@ -15,8 +15,8 @@ body {
 }
 
 body {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   height: 100dvh;
   background: var(--bg);
   color: var(--fg);
@@ -27,6 +27,11 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Components set their own display, so make the hidden attribute always win. */
+[hidden] {
+  display: none !important;
 }
 
 .sr-only {
@@ -230,38 +235,317 @@ select.ghost option {
   list-style: none;
 }
 
-.person,
 .avatar {
   display: grid;
   place-items: center;
+  flex: none;
   width: 26px;
   height: 26px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
   background: var(--person-color);
   color: #0b0f14;
   font: 600 11px var(--font-sans);
 }
 
-.person {
-  margin-left: -6px;
-  box-shadow: 0 0 0 2px var(--bg);
+button.avatar {
+  cursor: pointer;
 }
 
-.person:first-child {
+.avatar.person {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--bg);
+  transition: transform 120ms ease;
+}
+
+.people li:first-child .avatar.person {
   margin-left: 0;
+}
+
+.avatar.person:hover {
+  position: relative;
+  transform: translateY(-1px);
+}
+
+/* Viewers get a dashed ring; the person being followed a solid one. */
+.avatar.person.viewer {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--fg-subtle);
+}
+
+.avatar.person[aria-pressed='true'] {
+  position: relative;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--fg);
+}
+
+.avatar.more {
+  margin-left: -6px;
+  background: var(--surface-hover);
+  color: var(--fg);
+  box-shadow: 0 0 0 2px var(--bg);
+  font-size: 10px;
 }
 
 .avatar.you {
   margin-left: 4px;
-  padding: 0;
-  border: 0;
-  cursor: pointer;
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--border-strong);
   transition: box-shadow 120ms ease;
 }
 
 .avatar.you:hover {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--fg-muted);
+}
+
+.avatar.small {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+.people-list {
+  display: grid;
+  gap: 2px;
+  max-height: 280px;
+  margin: 4px -6px 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.person-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.person-row:hover,
+.person-row[aria-pressed='true'] {
+  background: var(--surface-hover);
+}
+
+.person-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Popovers ------------------------------------------------------------------ */
+
+.popover {
+  position: fixed;
+  inset: auto;
+  width: min(320px, calc(100vw - 16px));
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
+}
+
+.share-popover {
+  width: min(380px, calc(100vw - 16px));
+}
+
+.popover-title {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.small {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.share-block {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.share-block label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+.field-row {
+  display: flex;
+  gap: 6px;
+}
+
+.field-row .field {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  font: 12px var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.field-row .share {
+  margin-left: 0;
+}
+
+.ghost.bordered {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--fg);
+}
+
+.setting {
+  display: grid;
+  grid-template-columns: 1fr 130px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.setting.checkbox {
+  display: flex;
+  cursor: pointer;
+}
+
+.setting input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--fg);
+}
+
+.select-field {
+  height: 30px;
+  padding: 0 6px;
+}
+
+/* ---- Banner, loading and missing rooms -------------------------------------------- */
+
+.banner {
+  display: flex;
+  justify-content: center;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.editor {
+  position: relative;
+}
+
+.skeleton {
+  display: none;
+}
+
+.editor[data-loading] .skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 18px 16px 0 48px;
+  background: var(--bg);
+}
+
+.skeleton span {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-hover) 50%, var(--surface) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.gone {
+  display: grid;
+  flex: 1;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.gone h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.gone p {
+  margin: 0 0 8px;
+}
+
+.gone .share {
+  margin-left: 0;
+  text-decoration: none;
+}
+
+body.gone .editor,
+body.gone .banner,
+body.gone .toolbar,
+body.gone .presence,
+body.gone .statusbar-end,
+body.gone .position {
+  display: none;
+}
+
+/* Viewers and locked rooms: hide what cannot be used. */
+body.read-only #format,
+body.viewing #delete-room {
+  display: none;
+}
+
+.ghost.danger:hover {
+  color: var(--danger);
+}
+
+.danger-button {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+/* ---- Following ------------------------------------------------------------------ */
+
+.following {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+}
+
+.compact-button {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.ghost.small-icon {
+  width: 26px;
+  height: 24px;
+  margin-right: -8px;
 }
 
 /* ---- Toast ------------------------------------------------------------------ */
@@ -293,6 +577,7 @@ select.ghost option {
 /* ---- Editor & status bar --------------------------------------------------------- */
 
 .editor {
+  flex: 1;
   min-height: 0;
   overflow: hidden;
 }
@@ -335,6 +620,7 @@ select.ghost option {
 
 .position {
   font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 .statusbar-end {
@@ -347,7 +633,6 @@ select.ghost option {
 select.ghost.compact {
   max-width: 130px;
   height: 24px;
-  margin-right: -8px;
   padding: 0 22px 0 8px;
   font-size: 12px;
   background-position: calc(100% - 12px) 10px, calc(100% - 8px) 10px;
@@ -421,4 +706,19 @@ dialog::backdrop {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* In view-only mode the room label is a badge rather than a path. */
+body.viewing .room-id code {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-hover);
+  color: var(--fg-muted);
+  font: 500 11px var(--font-sans);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+body.viewing .room-id code::before {
+  content: none;
 }

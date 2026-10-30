@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  server-tests:
+    name: Server tests (${{ matrix.db }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [sqlite, mysql, postgres]
+    services:
+      mysql:
+        image: ${{ matrix.db == 'mysql' && 'mysql:8.4' || '' }}
+        env:
+          MYSQL_DATABASE: codehere
+          MYSQL_USER: codehere
+          MYSQL_PASSWORD: codehere
+          MYSQL_ROOT_PASSWORD: root
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      postgres:
+        image: ${{ matrix.db == 'postgres' && 'postgres:17-alpine' || '' }}
+        env:
+          POSTGRES_DB: codehere
+          POSTGRES_USER: codehere
+          POSTGRES_PASSWORD: codehere
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U codehere"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DB_DRIVER: ${{ matrix.db }}
+      DATABASE_URL: ${{ matrix.db == 'mysql' && 'mysql://codehere:codehere@127.0.0.1:3306/codehere' || matrix.db == 'postgres' && 'postgres://codehere:codehere@127.0.0.1:5432/codehere' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t codehere:ci .
+      - name: Smoke test the image
+        run: |
+          docker run -d --name codehere -p 3000:3000 codehere:ci
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:3000/healthz && break; sleep 1; done
+          curl -fs http://127.0.0.1:3000/ | grep -q '<title>CodeHere</title>'
+          docker logs codehere

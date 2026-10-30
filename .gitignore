@@ -8,3 +8,7 @@ data/
 
 # Private research notes
 ANALYSIS.md
+
+# Playwright
+test-results/
+playwright-report/

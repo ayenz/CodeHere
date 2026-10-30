@@ -1,10 +1,10 @@
 import { indentWithTab } from '@codemirror/commands'
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { HighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
-import { yCollab } from 'y-codemirror.next'
+import { yCollab, ySyncAnnotation } from 'y-codemirror.next'
 import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 
@@ -61,21 +61,46 @@ const defaultColors = EditorView.theme({
 
 const defaultTheme: Extension = [defaultColors, syntaxHighlighting(highlight)]
 
+export interface EditorSettings {
+  fontSize: number
+  wrap: boolean
+  /** Spaces per indent level, or 0 for tabs. */
+  indent: number
+}
+
 export interface Editor {
   view: EditorView
   setLanguage(extension: Extension): void
   /** Applies a colour theme, or the app-matching default when `null`. */
   setTheme(extension: Extension | null): void
+  setKeymap(extension: Extension): void
+  setSettings(settings: EditorSettings): void
+  setReadOnly(readOnly: boolean): void
+  /** Rejects local edits that would grow the document past `maxChars` (0 = unlimited). */
+  setDocLimit(maxChars: number, onReject: () => void): void
+}
+
+function settingsExtension({ fontSize, wrap, indent }: EditorSettings): Extension {
+  return [
+    EditorView.theme({ '&': { fontSize: `${fontSize}px` } }),
+    wrap ? EditorView.lineWrapping : [],
+    indentUnit.of(indent === 0 ? '\t' : ' '.repeat(indent)),
+    EditorState.tabSize.of(indent === 0 ? 4 : indent),
+  ]
 }
 
 export function createEditor(
   parent: HTMLElement,
   ytext: Y.Text,
   awareness: Awareness,
-  onSelection: (view: EditorView) => void,
+  options: { onSelection: (view: EditorView) => void; extensions?: Extension[] },
 ): Editor {
   const language = new Compartment()
   const colorTheme = new Compartment()
+  const keymapMode = new Compartment()
+  const settings = new Compartment()
+  const readOnly = new Compartment()
+  const docLimit = new Compartment()
   const undoManager = new Y.UndoManager(ytext)
 
   const view = new EditorView({
@@ -83,17 +108,23 @@ export function createEditor(
     state: EditorState.create({
       doc: ytext.toString(),
       extensions: [
+        // Vim/Emacs bindings must come before the default keymaps to take precedence.
+        keymapMode.of([]),
         basicSetup,
         // Tab indents; Esc then Tab moves focus out (CodeMirror's built-in escape hatch).
         keymap.of([indentWithTab]),
         language.of([]),
         layout,
         colorTheme.of(defaultTheme),
+        settings.of([]),
+        readOnly.of([]),
+        docLimit.of([]),
         EditorView.contentAttributes.of({ 'aria-label': 'Code', 'aria-multiline': 'true' }),
         EditorView.updateListener.of((update) => {
-          if (update.selectionSet || update.docChanged) onSelection(update.view)
+          if (update.selectionSet || update.docChanged) options.onSelection(update.view)
         }),
         yCollab(ytext, awareness, { undoManager }),
+        options.extensions ?? [],
       ],
     }),
   })
@@ -105,6 +136,29 @@ export function createEditor(
     },
     setTheme(extension) {
       view.dispatch({ effects: colorTheme.reconfigure(extension ?? defaultTheme) })
+    },
+    setKeymap(extension) {
+      view.dispatch({ effects: keymapMode.reconfigure(extension) })
+    },
+    setSettings(value) {
+      view.dispatch({ effects: settings.reconfigure(settingsExtension(value)) })
+    },
+    setReadOnly(value) {
+      // Read-only rather than non-editable, so people can still move the cursor and select text.
+      view.dispatch({ effects: readOnly.reconfigure(value ? EditorState.readOnly.of(true) : []) })
+    },
+    setDocLimit(maxChars, onReject) {
+      const filter =
+        maxChars > 0
+          ? EditorState.transactionFilter.of((tr) => {
+              // Remote updates (annotated by y-codemirror) always apply; only local growth is blocked.
+              if (!tr.docChanged || tr.annotation(ySyncAnnotation) !== undefined) return tr
+              if (tr.newDoc.length <= maxChars || tr.newDoc.length <= tr.startState.doc.length) return tr
+              queueMicrotask(onReject)
+              return []
+            })
+          : []
+      view.dispatch({ effects: docLimit.reconfigure(filter) })
     },
   }
 }

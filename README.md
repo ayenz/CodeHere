@@ -2,17 +2,30 @@
 
 A minimal, accessible, real-time collaborative code editor. Open a room, share the link, and edit together — no sign-up.
 
-- **Real-time collaboration** with live cursors and selections ([Yjs](https://yjs.dev) CRDT, works offline and resyncs on reconnect)
-- **CodeMirror 6** editor with syntax highlighting for 100+ languages (loaded on demand)
-- **Shared room settings** — the language is synced for everyone in the room
-- **Light / dark / system theme**, download as file, copy link
-- **Accessible** — semantic landmarks, skip link, labelled controls, screen-reader announcements for presence and status, visible focus, keyboard escape from the editor (<kbd>Esc</kbd> then <kbd>Tab</kbd>), reduced-motion support
-- **Pick your database**: SQLite (default, zero setup), MySQL or PostgreSQL
-- Small footprint: one Node process, one WebSocket per tab, ~20–40 bytes per keystroke
+**Collaboration**
+- Real-time editing with live cursors and selections ([Yjs](https://yjs.dev) CRDT; works offline and resyncs on reconnect)
+- Edit links and **view-only links** (people can read along but not edit, enforced by the server)
+- **Follow** someone's cursor by clicking their avatar
+- **Links to lines**: click a line number (shift-click for a range) to get `…/room#L10-L20`
+- The browser that created a room can **delete** it
+
+**Editor**
+- CodeMirror 6 with syntax highlighting for 100+ languages, loaded on demand, and **language auto-detection**
+- **Format** with Prettier (JS/TS/JSX/TSX, JSON, CSS/SCSS/LESS, HTML, Vue, Angular, Markdown, YAML) — <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd>
+- 17 editor themes plus light/dark app theme, font size, indentation, line wrapping, **Vim** and **Emacs** key bindings
+- Download the code as a file
+
+**Operations**
+- **Admin page** (`/admin`): stats, search rooms, view, lock/unlock and delete rooms
+- Pick your database: **SQLite** (default, zero setup), **MySQL** or **PostgreSQL**
+- Optional limits: document size, message size and rate, connections per IP, new rooms per hour — all off by default
+- One Node process, one WebSocket per tab, ~20–40 bytes per keystroke
+
+**Accessibility** — semantic landmarks, skip link, labelled controls, screen-reader announcements for presence, status and actions, visible focus, keyboard escape from the editor (<kbd>Esc</kbd> then <kbd>Tab</kbd>), reduced-motion support, and automated axe checks (WCAG 2 AA) in CI.
 
 ## Quick start
 
-Requires Node.js 20+.
+Requires Node.js 22+.
 
 ```bash
 npm install
@@ -23,10 +36,10 @@ Production:
 
 ```bash
 npm run build
-npm start          # serves the client and WebSocket on http://localhost:3000
+npm start          # serves the client, admin page and WebSocket on http://localhost:3000
 ```
 
-Open `/` to create a new room; the URL (`/<room-id>`) is the share link.
+Open `/` to create a new room; the URL (`/<room-id>`) is the edit link. The **Share** button also gives you a view-only link (`/v/<view-id>`).
 
 ## Configuration
 
@@ -39,11 +52,26 @@ Copy `.env.example` to `.env` and adjust.
 | `DB_DRIVER` | `sqlite` | `sqlite`, `mysql` or `postgres` |
 | `SQLITE_PATH` | `./data/codehere.db` | SQLite file (when `DB_DRIVER=sqlite`) |
 | `DATABASE_URL` | — | e.g. `mysql://user:pass@host:3306/codehere` or `postgres://user:pass@host:5432/codehere` |
-| `ROOM_TTL_DAYS` | `30` | Delete rooms not edited for this many days (`0` = never) |
+| `ADMIN_PASSWORD` | — | Enables the admin page at `/admin`. Disabled when empty. |
+| `TRUST_PROXY` | `false` | Read client IPs from `X-Forwarded-For` (only behind your own reverse proxy) |
+| `ROOM_TTL_DAYS` | `0` | Delete rooms not edited for this many days (`0` = keep forever) |
 | `PERSIST_DEBOUNCE_MS` | `2000` | Delay before writing changes to the database (at most 10 s while editing) |
 | `STATIC_DIR` | `client/dist` | Where the built client is served from |
 
-The schema is created automatically on startup (Kysely migrations).
+### Limits
+
+Every limit is **off (`0`) by default**. Set the ones you need for a public instance.
+
+| Variable | Effect when set |
+|---|---|
+| `MAX_DOC_CHARS` | Edits that would grow a room past this many characters are rejected (and reverted for everyone) |
+| `MAX_MESSAGE_BYTES` | Largest single WebSocket message |
+| `MAX_MESSAGES_PER_SECOND` | Sustained messages per connection (bursts up to 4×); excess closes the connection |
+| `MAX_CONNECTIONS_PER_IP` | Simultaneous connections per client IP |
+| `MAX_NEW_ROOMS_PER_HOUR` | New rooms a client IP may create per hour |
+| `MAX_ACTIVE_ROOMS` | Rooms kept in memory at once |
+
+The schema is created and migrated automatically on startup.
 
 ## Docker
 
@@ -59,20 +87,25 @@ DB_DRIVER=mysql DATABASE_URL=mysql://codehere:codehere@mysql:3306/codehere \
   docker compose --profile mysql up -d --build
 ```
 
+Add `ADMIN_PASSWORD=…` to enable the admin page. The image runs as a non-root user and stores SQLite data in `/data`.
+
 ## Architecture
 
 ```
 client/  Vite + TypeScript (no framework)
   CodeMirror 6 ── y-codemirror.next ── Y.Doc ── y-websocket provider
                                                     │ binary y-websocket protocol
-server/  Node + ws                                  ▼
-  /ws/:room ── RoomManager ── Y.Doc + Awareness per room (in memory)
+server/  Node + ws                                  ▼        + status messages (type 100)
+  /ws/:room, /ws/v/:viewId ── RoomManager ── Y.Doc + Awareness per room (in memory)
                      └── debounced snapshot ──► Kysely ──► SQLite | MySQL | PostgreSQL
+  /api/admin/*, /api/rooms/:id  (admin API, owner delete)
 ```
 
 - Each room is one `Y.Doc`: text in `getText('code')`, shared settings in `getMap('meta')`.
 - The server speaks the standard y-websocket sync/awareness protocol, keeps a room in memory while anyone is connected, saves a snapshot after edits, and unloads the room when the last person leaves.
+- Read-only access (view links, locked rooms) is enforced on the server: updates from read-only connections are dropped.
 - Presence (names, colours, cursors) uses Yjs awareness and is never stored.
+- Room ownership is a random token kept in the creator's browser; the server stores only its SHA-256.
 
 ## Scripts
 
@@ -82,11 +115,13 @@ server/  Node + ws                                  ▼
 | `npm run build` | Build client and server |
 | `npm start` | Run the production server |
 | `npm run typecheck` | Type-check both packages |
-| `npm run smoke -w server` | End-to-end sync/persistence check against a running server |
+| `npm test` | Server test suite (uses `DB_DRIVER`/`DATABASE_URL`, SQLite by default) |
+| `npm run test:e2e` | Playwright end-to-end and accessibility tests (run `npm run build` first; set `E2E_BROWSER` to use an installed Chromium-based browser) |
+| `npm run smoke -w server` | Quick sync/persistence check against a running server |
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep the UI keyboard- and screen-reader-friendly: label every control, keep text contrast at WCAG AA or better, and test with the keyboard only.
+Issues and pull requests are welcome. CI runs the type check, the server tests against SQLite, MySQL and PostgreSQL, the end-to-end tests and a Docker build. Please keep the UI keyboard- and screen-reader-friendly: label every control, keep text contrast at WCAG AA or better, and test with the keyboard only.
 
 ## License
 

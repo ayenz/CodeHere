@@ -39,6 +39,12 @@
       <section class="presence" aria-labelledby="people-heading">
         <h2 id="people-heading" class="sr-only">People in this room</h2>
         <ul id="people" class="people"></ul>
+        <button id="people-more" class="avatar more" type="button" popovertarget="people-popover" aria-expanded="false" hidden></button>
+        <div id="people-popover" class="popover" popover>
+          <h3 class="popover-title">In this room</h3>
+          <p class="muted small">Pick someone to follow their cursor.</p>
+          <ul id="people-popover-list" class="people-list"></ul>
+        </div>
         <button id="rename" class="avatar you" type="button">
           <span id="you-initial" aria-hidden="true"></span>
           <span id="you-label" class="sr-only"></span>
@@ -49,9 +55,21 @@
         <label class="sr-only" for="language">Language</label>
         <select id="language" class="ghost select"></select>
 
+        <button id="format" class="ghost icon" type="button" aria-label="Format code (Shift+Alt+F)" title="Format code (Shift+Alt+F)" hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16M4 10h10M4 14h16M4 18h10" />
+          </svg>
+        </button>
+
         <button id="download" class="ghost icon" type="button" aria-label="Download file" title="Download file">
           <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />
+          </svg>
+        </button>
+
+        <button id="delete-room" class="ghost icon danger" type="button" aria-label="Delete room" title="Delete room" hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13" />
           </svg>
         </button>
 
@@ -65,7 +83,7 @@
           </svg>
         </button>
 
-        <button id="copy-link" class="share" type="button">
+        <button id="share-button" class="share" type="button" popovertarget="share-popover" aria-expanded="false">
           <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
             <path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
@@ -75,17 +93,97 @@
       </div>
     </header>
 
-    <main id="editor" class="editor" tabindex="-1" aria-label="Shared code editor"></main>
+    <div id="share-popover" class="popover share-popover" popover aria-labelledby="share-title">
+      <h3 id="share-title" class="popover-title">Share this room</h3>
+      <div id="share-edit" class="share-block">
+        <label for="share-edit-url">Edit link</label>
+        <div class="field-row">
+          <input id="share-edit-url" class="field" readonly />
+          <button id="copy-edit" class="share" type="button">Copy</button>
+        </div>
+        <p class="muted small">Anyone with this link can edit.</p>
+      </div>
+      <div id="share-view" class="share-block">
+        <label for="share-view-url">View-only link</label>
+        <div class="field-row">
+          <input id="share-view-url" class="field" readonly />
+          <button id="copy-view" class="ghost bordered" type="button">Copy</button>
+        </div>
+        <p class="muted small">People with this link can read along but not edit.</p>
+      </div>
+      <div class="share-block">
+        <button id="link-lines" class="ghost bordered" type="button">Point links to the selected lines</button>
+        <p id="share-lines-note" class="muted small" hidden></p>
+        <p class="muted small">Tip: click a line number (shift-click for a range).</p>
+      </div>
+    </div>
+
+    <div id="banner" class="banner" role="status" hidden>
+      <span id="banner-text"></span>
+    </div>
+
+    <main id="editor" class="editor" tabindex="-1" aria-label="Shared code editor" aria-busy="true" data-loading>
+      <div class="skeleton" aria-hidden="true">
+        <span style="width: 38%"></span>
+        <span style="width: 62%"></span>
+        <span style="width: 54%"></span>
+        <span style="width: 24%"></span>
+        <span style="width: 70%"></span>
+        <span style="width: 46%"></span>
+      </div>
+    </main>
+
+    <section id="gone" class="gone" hidden aria-labelledby="gone-title">
+      <h1 id="gone-title">This room doesn't exist</h1>
+      <p id="gone-text" class="muted">It may have been deleted, or the link is mistyped.</p>
+      <a id="gone-new" class="share" href="/">Start a new room</a>
+    </section>
 
     <footer class="statusbar">
       <span id="status" class="status" role="status" data-state="connecting">Connecting…</span>
       <span id="position" class="position" aria-hidden="true"></span>
+      <span id="following" class="following" hidden>
+        Following <strong id="following-name"></strong>
+        <button id="stop-following" class="ghost compact-button" type="button">Stop</button>
+      </span>
       <div class="statusbar-end">
         <span class="hint">Press <kbd>Esc</kbd> then <kbd>Tab</kbd> to leave the editor</span>
         <label class="sr-only" for="editor-theme">Editor theme</label>
         <select id="editor-theme" class="ghost select compact" title="Editor theme"></select>
+        <button id="settings-button" class="ghost icon small-icon" type="button" popovertarget="settings-popover" aria-expanded="false" aria-label="Editor settings" title="Editor settings">
+          <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+            <circle cx="16" cy="7" r="2" />
+            <circle cx="10" cy="17" r="2" />
+          </svg>
+        </button>
       </div>
     </footer>
+
+    <div id="settings-popover" class="popover" popover aria-labelledby="settings-title">
+      <h3 id="settings-title" class="popover-title">Editor settings</h3>
+      <p class="muted small">Only for you, saved in this browser.</p>
+      <div class="setting">
+        <label for="setting-font-size">Font size</label>
+        <select id="setting-font-size" class="field select-field"></select>
+      </div>
+      <div class="setting">
+        <label for="setting-indent">Indentation</label>
+        <select id="setting-indent" class="field select-field"></select>
+      </div>
+      <div class="setting">
+        <label for="setting-keymap">Key bindings</label>
+        <select id="setting-keymap" class="field select-field">
+          <option value="default">Default</option>
+          <option value="vim">Vim</option>
+          <option value="emacs">Emacs</option>
+        </select>
+      </div>
+      <label class="setting checkbox">
+        <input id="setting-wrap" type="checkbox" />
+        <span>Wrap long lines</span>
+      </label>
+    </div>
 
     <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <!-- Visual-only toast; screen readers get the same message from #announcer. -->
@@ -100,6 +198,17 @@
         <div class="dialog-actions">
           <button id="name-cancel" class="ghost" type="button">Cancel</button>
           <button class="share" value="save">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="delete-dialog" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-text">
+      <form method="dialog" class="dialog-body">
+        <h2 id="delete-dialog-title">Delete this room?</h2>
+        <p id="delete-dialog-text" class="muted">The code is removed for everyone and the links stop working. This can't be undone.</p>
+        <div class="dialog-actions">
+          <button id="delete-cancel" class="ghost" type="button" autofocus>Cancel</button>
+          <button class="share danger-button" value="delete">Delete room</button>
         </div>
       </form>
     </dialog>

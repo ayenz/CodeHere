@@ -54,6 +54,8 @@
           <p class="muted">Enter the admin password set on the server.</p>
           <div class="form-row">
             <label for="password">Password</label>
+            <!-- Lets password managers and browsers associate the saved password. -->
+            <input type="text" name="username" value="admin" autocomplete="username" hidden />
             <input
               id="password"
               name="password"
