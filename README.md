@@ -1,145 +1,218 @@
 # CodeHere
 
-A minimal, accessible, real-time collaborative code editor. Open a room, share the link, and edit together — no sign-up.
+**A minimal, accessible, real-time collaborative code editor you can host yourself.**
+Open a room, share the link, and write code together. No sign-up, no tracking.
 
-**Collaboration**
-- Real-time editing with live cursors and selections ([Yjs](https://yjs.dev) CRDT; works offline and resyncs on reconnect)
-- Edit links and **view-only links** (people can read along but not edit, enforced by the server)
-- **Follow** someone's cursor by clicking their avatar
-- **Links to lines**: click a line number (shift-click for a range) to get `…/room#L10-L20`
-- The browser that created a room can **delete** it
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/screenshot-dark.png">
+  <img alt="A CodeHere room: TypeScript code with two other people's cursors, a highlighted linked line, and the toolbar with language, format, download, theme and share buttons." src="docs/images/screenshot-light.png">
+</picture>
 
-**Editor**
-- CodeMirror 6 with syntax highlighting for 100+ languages, loaded on demand, and **language auto-detection**
-- **Format** with Prettier (JS/TS/JSX/TSX, JSON, CSS/SCSS/LESS, HTML, Vue, Angular, Markdown, YAML) — <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd>
-- 17 editor themes plus light/dark app theme, font size, indentation, line wrapping, **Vim** and **Emacs** key bindings
-- Download the code as a file
+## Contents
 
-**Operations**
-- **Admin page** on its own subdomain (e.g. `admin.example.com`): stats, search rooms, view, lock/unlock and delete rooms. Every path on the main domain stays available for rooms — even `/admin`.
-- Pick your database: **SQLite** (default, zero setup), **MySQL** or **PostgreSQL**
-- Optional limits: document size, message size and rate, connections per IP, new rooms per hour — all off by default
-- One Node process, one WebSocket per tab, ~20–40 bytes per keystroke
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Using CodeHere](#using-codehere)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Admin page](#admin-page)
+- [How it works](#how-it-works)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
 
-**Accessibility** — semantic landmarks, skip link, labelled controls, screen-reader announcements for presence, status and actions, visible focus, keyboard escape from the editor (<kbd>Esc</kbd> then <kbd>Tab</kbd>), reduced-motion support, and automated axe checks (WCAG 2 AA) in CI.
+## Features
+
+**Collaborate**
+- Real-time editing with everyone's cursor and selection in their own colour, built on the [Yjs](https://yjs.dev) CRDT. Edits made offline sync when the connection is back.
+- **Edit links** and **view-only links**. View-only is enforced by the server, not just hidden in the UI.
+- **Follow** a person: click their avatar and your view tracks their cursor.
+- **Links to lines**: click a line number (shift-click for a range) to share `…/room#L10-L20`.
+- See who is in the room. Large groups collapse into "+N" with a full list.
+- The browser that created a room can **delete** it for everyone.
+
+**Write code**
+- [CodeMirror 6](https://codemirror.net) with syntax highlighting for **143 languages**, each loaded only when used.
+- **Language auto-detection** for 25 common languages, or pick one for the whole room.
+- **Format with Prettier** (<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd>) for JavaScript, TypeScript, JSX, TSX, JSON, CSS, SCSS, LESS, HTML, Vue, Angular, Markdown and YAML.
+- **17 editor themes** (GitHub, VS Code, One Dark, Dracula, Tokyo Night, Nord, Monokai, Solarized, Gruvbox, Material, Xcode…) plus a light/dark app theme.
+- Personal settings: font size, indentation (2 or 4 spaces, or tabs), line wrapping, **Vim** and **Emacs** key bindings.
+- Search and replace, bracket matching, code folding, multiple cursors, and download as a file.
+
+**Run it**
+- One small Node.js server. Choose **SQLite** (default, zero setup), **PostgreSQL** or **MySQL**.
+- **Admin page** on its own subdomain: stats, room search, view, lock/unlock and delete rooms.
+- Optional limits for public instances (document size, message rate, connections and new rooms per IP…), all off by default.
+- Docker image, Docker Compose with automatic HTTPS (Caddy), and a systemd + nginx setup.
+- Light on the wire: about 20–40 bytes per keystroke. About 190 KB of JavaScript and CSS (gzipped) on first load.
+
+**Accessible**
+- Semantic landmarks, a skip link and labelled controls throughout.
+- Screen readers hear when people join or leave, connection changes and the result of actions.
+- Visible focus everywhere, and a keyboard escape from the editor (<kbd>Esc</kbd> then <kbd>Tab</kbd>).
+- Colours meet WCAG AA contrast and reduced motion is respected.
+- Every change is checked with axe (WCAG 2 A/AA) in CI.
 
 ## Quick start
 
-Requires Node.js 22+.
+**With Docker:**
 
 ```bash
+git clone https://github.com/ayenz/CodeHere.git
+cd CodeHere
+docker compose up -d --build
+```
+
+Open http://localhost:3000.
+
+**From source** (Node.js 22 or newer):
+
+```bash
+git clone https://github.com/ayenz/CodeHere.git
+cd CodeHere
 npm install
-npm run dev        # server on :3000, client on http://localhost:5173
+npm run dev
 ```
 
-Production:
+Open http://localhost:5173. Edits reload automatically. To try the admin page, copy `.env.example` to `.env`, set `ADMIN_PASSWORD`, restart, and open http://admin.localhost:5173.
 
-```bash
-npm run build
-npm start          # serves the client, admin page and WebSocket on http://localhost:3000
-```
+## Using CodeHere
 
-Open `/` to create a new room; the URL (`/<room-id>`) is the edit link. The **Share** button also gives you a view-only link (`/v/<view-id>`).
+| To… | Do this |
+|---|---|
+| Start a room | Open the site, or click the **CodeHere** logo. Every room gets its own URL. |
+| Invite people to edit | **Share → Edit link → Copy**. Anyone with the link can edit. |
+| Let people only watch | **Share → View-only link → Copy**. They see live changes and cursors but cannot type. |
+| Point someone at some lines | Click a line number (shift-click to extend), or select lines and use **Share → Point links to the selected lines**. |
+| Follow someone | Click their avatar in the top bar. Click it again, press **Stop**, or start typing to stop following. |
+| Change the language | Use the language menu. **Auto-detect** guesses from the code; any explicit choice applies to everyone in the room. |
+| Format the code | Click the format button or press <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> (shown when the language is supported). |
+| Change your name | Click your own avatar (the one with a ring). |
+| Theme, font, indentation, Vim/Emacs | Bottom-right corner: the theme menu and the settings button. These only affect you. |
+| Delete a room | Use the trash button. It only appears in the browser that created the room. |
+
+**Keyboard shortcuts**
+
+| Shortcut | Action |
+|---|---|
+| <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> | Format the document |
+| <kbd>Esc</kbd> then <kbd>Tab</kbd> | Move focus out of the editor |
+| <kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd> | Indent / outdent |
+| <kbd>Ctrl/Cmd</kbd>+<kbd>F</kbd> | Search and replace |
+| <kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> / <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | Undo / redo your own changes |
+| <kbd>Ctrl/Cmd</kbd>+<kbd>/</kbd> | Toggle comment |
+| <kbd>Ctrl/Cmd</kbd>+click | Add a cursor |
 
 ## Configuration
 
-Copy `.env.example` to `.env` and adjust.
+All settings are environment variables. Copy `.env.example` to `.env` and adjust it; both `npm run dev`/`npm start` and Docker Compose read it.
 
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3000` | HTTP/WebSocket port |
-| `HOST` | `0.0.0.0` | Bind address |
+| `HOST` | `0.0.0.0` | Bind address (`127.0.0.1` behind a local reverse proxy) |
 | `DB_DRIVER` | `sqlite` | `sqlite`, `mysql` or `postgres` |
 | `SQLITE_PATH` | `./data/codehere.db` | SQLite file (when `DB_DRIVER=sqlite`) |
-| `DATABASE_URL` | — | e.g. `mysql://user:pass@host:3306/codehere` or `postgres://user:pass@host:5432/codehere` |
-| `ADMIN_PASSWORD` | — | Admin password. The admin page is disabled unless this and `ADMIN_HOST` are set. |
-| `ADMIN_HOST` | — | Host that serves the admin page and API, e.g. `admin.example.com` (`admin.localhost` in development) |
-| `PUBLIC_URL` | derived | Editor URL for links from the admin page, e.g. `https://example.com`. Defaults to `ADMIN_HOST` without its first label. |
-| `TRUST_PROXY` | `false` | Read client IPs from `X-Forwarded-For` (only behind your own reverse proxy) |
-| `ROOM_TTL_DAYS` | `0` | Delete rooms not edited for this many days (`0` = keep forever) |
-| `PERSIST_DEBOUNCE_MS` | `2000` | Delay before writing changes to the database (at most 10 s while editing) |
+| `DATABASE_URL` | — | e.g. `postgres://user:pass@host:5432/codehere` or `mysql://user:pass@host:3306/codehere` |
+| `ADMIN_PASSWORD` | — | Admin password. The admin page is off unless this and `ADMIN_HOST` are both set. |
+| `ADMIN_HOST` | — | Host name that serves the admin page, e.g. `admin.example.com` (`admin.localhost` in development) |
+| `PUBLIC_URL` | derived | Editor URL used for links on the admin page. Defaults to `ADMIN_HOST` without its first label. |
+| `TRUST_PROXY` | `false` | Read client IP, host and scheme from `X-Forwarded-*` (only behind your own proxy) |
+| `ROOM_TTL_DAYS` | `0` | Delete rooms nobody edited for this many days (`0` keeps them forever) |
+| `PERSIST_DEBOUNCE_MS` | `2000` | Delay before saving changes (at most 10 s while people keep typing) |
 | `STATIC_DIR` | `client/dist` | Where the built client is served from |
 
-### Limits
+**Limits.** Every limit is off (`0`) by default. Set the ones you need on a public instance; [docs/deployment.md](docs/deployment.md#hardening-a-public-instance) has suggested values.
 
-Every limit is **off (`0`) by default**. Set the ones you need for a public instance.
-
-| Variable | Effect when set |
+| Variable | When set |
 |---|---|
-| `MAX_DOC_CHARS` | Edits that would grow a room past this many characters are rejected (and reverted for everyone) |
+| `MAX_DOC_CHARS` | Edits that would grow a room beyond this many characters are rejected and reverted for everyone |
 | `MAX_MESSAGE_BYTES` | Largest single WebSocket message |
-| `MAX_MESSAGES_PER_SECOND` | Sustained messages per connection (bursts up to 4×); excess closes the connection |
+| `MAX_MESSAGES_PER_SECOND` | Sustained messages per connection (bursts up to 4×); going over closes the connection |
 | `MAX_CONNECTIONS_PER_IP` | Simultaneous connections per client IP |
-| `MAX_NEW_ROOMS_PER_HOUR` | New rooms a client IP may create per hour |
-| `MAX_ACTIVE_ROOMS` | Rooms kept in memory at once |
+| `MAX_NEW_ROOMS_PER_HOUR` | New rooms one IP may create per hour |
+| `MAX_ACTIVE_ROOMS` | Rooms held in memory at once |
 
-The schema is created and migrated automatically on startup.
+Docker Compose also uses `PUBLISH` (where the app port is published), `DOMAIN` (for automatic HTTPS) and `DB_PASSWORD` (for the bundled databases). See `.env.example`.
 
-## Docker
+## Deployment
 
-```bash
-docker compose up -d --build                     # SQLite in a volume
+**[docs/deployment.md](docs/deployment.md)** walks through a production setup step by step:
 
-# PostgreSQL
-DB_DRIVER=postgres DATABASE_URL=postgres://codehere:codehere@postgres:5432/codehere \
-  docker compose --profile postgres up -d --build
-
-# MySQL
-DB_DRIVER=mysql DATABASE_URL=mysql://codehere:codehere@mysql:3306/codehere \
-  docker compose --profile mysql up -d --build
-```
-
-Add `ADMIN_PASSWORD=…` and `ADMIN_HOST=admin.example.com` to enable the admin page. The image runs as a non-root user and stores SQLite data in `/data`.
+- **Docker Compose + Caddy.** One command, with automatic HTTPS for your domain and admin subdomain:
+  ```bash
+  docker compose --profile https up -d --build                      # SQLite
+  docker compose --profile https --profile postgres up -d --build   # PostgreSQL
+  ```
+- **Node.js + systemd + nginx**, with ready-made files in [`deploy/`](deploy).
+- Using PostgreSQL, MySQL or a managed database.
+- Hardening a public instance, what is stored, backups, upgrades and troubleshooting.
 
 ## Admin page
 
-The admin page lives on its own host so that no room name is reserved for it:
+The admin page has its own host name, so every path on the editor stays free for rooms (even `/admin`).
 
-1. Point DNS for `admin.example.com` at the same server as `example.com`.
+1. Point DNS for `admin.example.com` at your server.
 2. Set `ADMIN_PASSWORD` and `ADMIN_HOST=admin.example.com`.
-3. Make your reverse proxy forward both hosts to CodeHere, keeping the `Host` header (or send `X-Forwarded-Host` with `TRUST_PROXY=true`). For example, with Caddy:
+3. Open `https://admin.example.com` and sign in.
 
-   ```
-   example.com, admin.example.com {
-     reverse_proxy localhost:3000
-   }
-   ```
+From there you can see live stats (rooms, active rooms, connections, uptime, memory), search rooms by ID, read a room's code, lock a room so nobody can edit it, and delete rooms. Sign-in attempts are rate limited and sessions use an `HttpOnly`, `SameSite=Strict` cookie. The admin API does not exist on any other host.
 
-The admin API only answers on `ADMIN_HOST`, and the admin host serves nothing but the admin page. In development, open `http://admin.localhost:5173` (`*.localhost` resolves to your machine in Chrome and Firefox).
-
-## Architecture
+## How it works
 
 ```
-client/  Vite + TypeScript (no framework)
+Browser (Vite + TypeScript, no framework)
   CodeMirror 6 ── y-codemirror.next ── Y.Doc ── y-websocket provider
-                                                    │ binary y-websocket protocol
-server/  Node + ws                                  ▼        + status messages (type 100)
-  /ws/:room, /ws/v/:viewId ── RoomManager ── Y.Doc + Awareness per room (in memory)
-                     └── debounced snapshot ──► Kysely ──► SQLite | MySQL | PostgreSQL
-  /api/rooms/:id (owner delete) · ADMIN_HOST: admin page + /api/admin/*
+                                                   │  y-websocket protocol (binary)
+                                                   │  + room status messages
+Server (Node.js + ws)                              ▼
+  /ws/<room>  /ws/v/<viewId> ──► RoomManager ──► one Y.Doc + Awareness per open room
+                                     │
+                                     └─ debounced snapshot ──► Kysely ──► SQLite | PostgreSQL | MySQL
+  /api/rooms/<id>       creator deletes a room
+  ADMIN_HOST            admin page + /api/admin/*
 ```
 
-- Each room is one `Y.Doc`: text in `getText('code')`, shared settings in `getMap('meta')`.
-- The server speaks the standard y-websocket sync/awareness protocol, keeps a room in memory while anyone is connected, saves a snapshot after edits, and unloads the room when the last person leaves.
-- Read-only access (view links, locked rooms) is enforced on the server: updates from read-only connections are dropped.
-- Presence (names, colours, cursors) uses Yjs awareness and is never stored.
-- Room ownership is a random token kept in the creator's browser; the server stores only its SHA-256.
+- **Sync.** Each room is a Yjs document (`code` text plus a `meta` map for shared settings such as the language). Clients exchange small binary updates through the server, which merges them, so concurrent edits never conflict.
+- **Persistence.** A room lives in memory while anyone is connected. Changes are saved as a document snapshot shortly after editing. The room is unloaded when the last person leaves and saved on shutdown. Database migrations run on startup.
+- **Permissions.** View-only links (`/v/<viewId>`) and locked rooms are enforced by the server, which drops updates from read-only connections. Viewers never receive the edit link.
+- **Ownership.** When you create a room your browser keeps a random secret. The server stores only its SHA-256 and checks it when you delete the room.
+- **Presence.** Names, colours and cursors travel over Yjs awareness and are never written to the database.
 
-## Scripts
+See [What CodeHere stores](docs/deployment.md#what-codehere-stores) for the full list.
+
+## Development
+
+```
+client/           Vite app: editor (index.html, src/) and admin page (admin.html, src/admin/)
+server/           Node server: src/ (app, rooms, db, admin, config), test/ (node:test)
+e2e/              Playwright end-to-end and accessibility tests
+deploy/           Caddyfile, nginx and systemd examples
+docs/             Deployment guide and images
+```
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Server (tsx watch) + Vite dev server |
+| `npm run dev` | Server (auto-restart) + Vite dev server on http://localhost:5173 |
 | `npm run build` | Build client and server |
-| `npm start` | Run the production server |
+| `npm start` | Run the production build on http://localhost:3000 |
 | `npm run typecheck` | Type-check both packages |
-| `npm test` | Server test suite (uses `DB_DRIVER`/`DATABASE_URL`, SQLite by default) |
-| `npm run test:e2e` | Playwright end-to-end and accessibility tests (run `npm run build` first; set `E2E_BROWSER` to use an installed Chromium-based browser) |
-| `npm run smoke -w server` | Quick sync/persistence check against a running server |
+| `npm test` | Server tests. They use `DB_DRIVER`/`DATABASE_URL`, so the same suite runs against PostgreSQL or MySQL. |
+| `npm run test:e2e` | Playwright tests against the production build (run `npm run build` first; set `E2E_BROWSER` to use an installed Chromium-based browser instead of downloading one) |
+| `npm run smoke -w server` | Quick sync and persistence check against a running server |
+
+To run the server tests against PostgreSQL:
+
+```bash
+docker run -d --name codehere-pg -e POSTGRES_USER=codehere -e POSTGRES_PASSWORD=codehere -e POSTGRES_DB=codehere -p 5432:5432 postgres:17-alpine
+DB_DRIVER=postgres DATABASE_URL=postgres://codehere:codehere@localhost:5432/codehere npm test
+```
 
 ## Contributing
 
-Issues and pull requests are welcome. CI runs the type check, the server tests against SQLite, MySQL and PostgreSQL, the end-to-end tests and a Docker build. Please keep the UI keyboard- and screen-reader-friendly: label every control, keep text contrast at WCAG AA or better, and test with the keyboard only.
+Issues and pull requests are welcome. CI runs the type check, the server tests against SQLite, PostgreSQL and MySQL, the end-to-end and accessibility tests, and a Docker build.
+
+When you change the UI, keep it usable with a keyboard and a screen reader. That means labelling every control, keeping text contrast at WCAG AA or better, and announcing anything that changes without a page load. The axe checks in `e2e/` catch many problems, but not all of them.
 
 ## License
 

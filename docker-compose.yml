@@ -1,26 +1,44 @@
-# Production-style deployment. Default uses SQLite in a volume.
-#   docker compose up -d                       # SQLite
-#   docker compose --profile postgres up -d    # + Postgres (set DB_DRIVER/DATABASE_URL below)
-#   docker compose --profile mysql up -d       # + MySQL
+# CodeHere with Docker Compose. Configuration comes from .env (see .env.example).
+#
+#   docker compose up -d --build                       # app + SQLite in a volume
+#   docker compose --profile postgres up -d --build    # + PostgreSQL
+#   docker compose --profile mysql up -d --build       # + MySQL
+#   docker compose --profile https up -d --build       # + Caddy with automatic HTTPS
+#
+# Profiles combine, e.g. --profile postgres --profile https. See docs/deployment.md.
 services:
   app:
     build: .
-    ports:
-      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
     environment:
-      DB_DRIVER: ${DB_DRIVER:-sqlite}
+      # Fixed inside the container; everything else comes from .env.
+      HOST: 0.0.0.0
+      PORT: 3000
       SQLITE_PATH: /data/codehere.db
-      DATABASE_URL: ${DATABASE_URL:-}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      ADMIN_HOST: ${ADMIN_HOST:-}
-      PUBLIC_URL: ${PUBLIC_URL:-}
-      TRUST_PROXY: ${TRUST_PROXY:-false}
-      ROOM_TTL_DAYS: ${ROOM_TTL_DAYS:-0}
-      MAX_DOC_CHARS: ${MAX_DOC_CHARS:-0}
-      MAX_CONNECTIONS_PER_IP: ${MAX_CONNECTIONS_PER_IP:-0}
-      MAX_NEW_ROOMS_PER_HOUR: ${MAX_NEW_ROOMS_PER_HOUR:-0}
+    ports:
+      # Set PUBLISH=127.0.0.1:3000 when a reverse proxy runs on the same machine.
+      - "${PUBLISH:-3000}:3000"
     volumes:
       - app-data:/data
+    restart: unless-stopped
+
+  caddy:
+    profiles: [https]
+    image: caddy:2
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      ADMIN_HOST: ${ADMIN_HOST:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
     restart: unless-stopped
 
   postgres:
@@ -28,27 +46,29 @@ services:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: codehere
-      POSTGRES_PASSWORD: codehere
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-codehere}
       POSTGRES_DB: codehere
-    ports:
-      - "5432:5432"
+    # Not published on the host: the app reaches it as postgres:5432.
     volumes:
       - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
 
   mysql:
     profiles: [mysql]
     image: mysql:8.4
     environment:
       MYSQL_USER: codehere
-      MYSQL_PASSWORD: codehere
+      MYSQL_PASSWORD: ${DB_PASSWORD:-codehere}
       MYSQL_DATABASE: codehere
-      MYSQL_ROOT_PASSWORD: codehere-root
-    ports:
-      - "3306:3306"
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    # Not published on the host: the app reaches it as mysql:3306.
     volumes:
       - mysql-data:/var/lib/mysql
+    restart: unless-stopped
 
 volumes:
   app-data:
+  caddy-data:
+  caddy-config:
   pg-data:
   mysql-data:

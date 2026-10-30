@@ -4,3 +4,7 @@ node_modules
 data
 .env
 *.db
+docs
+deploy
+e2e
+test-results

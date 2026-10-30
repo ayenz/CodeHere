@@ -1,0 +1,29 @@
+# systemd unit for running CodeHere without Docker.
+# Install: sudo cp deploy/codehere.service /etc/systemd/system/ && sudo systemctl enable --now codehere
+[Unit]
+Description=CodeHere collaborative code editor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=codehere
+Group=codehere
+WorkingDirectory=/opt/codehere/app
+# Configuration lives in /opt/codehere/app/.env (see .env.example).
+ExecStart=/usr/bin/node --env-file=/opt/codehere/app/.env server/dist/index.js
+Restart=on-failure
+RestartSec=3
+# SIGTERM makes CodeHere save every open room before exiting.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/codehere/app/data
+
+[Install]
+WantedBy=multi-user.target

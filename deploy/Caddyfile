@@ -1,0 +1,12 @@
+# Used by `docker compose --profile https`. Caddy gets and renews HTTPS certificates
+# automatically for DOMAIN and ADMIN_HOST (both must point at this server in DNS).
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
+
+# The admin page. Remove this block if you don't use ADMIN_HOST.
+{$ADMIN_HOST} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
